@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proposal B · Canvas-first</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .app { position: relative; height: 640px; min-width: 960px; font-size: 13px; color: #ede6d8; overflow: hidden; }
+  .app svg.scene { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .glass { position: absolute; background: rgba(24, 21, 19, .78); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+  .chips { top: 12px; left: 12px; display: flex; gap: 4px; padding: 6px; }
+  .chips i { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-weight: 700; font-size: 11px; color: #f5f0e6; }
+  .chips i.empty { border: 1px dashed rgba(255,255,255,.25); color: rgba(255,255,255,.3); background: transparent !important; }
+  .chips i.sel { outline: 2px solid #f5f0e6; outline-offset: 1px; }
+  .meta { top: 12px; right: 12px; padding: 6px 12px; display: flex; gap: 14px; font: 12px ui-monospace, Consolas, monospace; color: #c9bfae; }
+  .meta button { all: unset; cursor: pointer; color: #ede6d8; }
+  .menu-btn { top: 12px; left: 50%; transform: translateX(-50%); padding: 6px 12px; cursor: pointer; display: flex; gap: 8px; align-items: center; color: #c9bfae; }
+  .dock { bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; padding: 5px; border-radius: 14px; }
+  .dock button { all: unset; cursor: pointer; padding: 7px 11px; border-radius: 9px; display: flex; gap: 6px; align-items: center; color: #d9cfbf; }
+  .dock button:hover { background: rgba(255,255,255,.08); }
+  .dock button[aria-pressed="true"] { background: #A8563C; color: #fff; }
+  .dock button:focus-visible { outline: 2px solid #D98E5F; }
+  .dock kbd { background: transparent; color: inherit; opacity: .6; border-color: rgba(255,255,255,.2); }
+  .dock .sep { width: 1px; background: rgba(255,255,255,.12); margin: 4px 4px; }
+  .toast { bottom: 70px; left: 50%; transform: translateX(-50%); padding: 7px 14px; border-radius: 999px; color: #f0c9a9; white-space: nowrap; }
+  .pop { left: 8%; top: 48%; padding: 10px 12px; width: 190px; }
+  .pop .row { display: flex; justify-content: space-between; align-items: center; margin: 4px 0; }
+  .pop button.step { all: unset; cursor: pointer; width: 22px; height: 22px; text-align: center; border-radius: 5px; background: rgba(255,255,255,.08); }
+  .pop .pt { position: absolute; left: -7px; top: 14px; width: 12px; height: 12px; background: inherit; transform: rotate(45deg); border-left: 1px solid rgba(255,255,255,.08); border-bottom: 1px solid rgba(255,255,255,.08); }
+  .palette { top: 70px; left: 50%; transform: translateX(-50%); width: 460px; padding: 0; display: none; overflow: hidden; }
+  .palette.open { display: block; }
+  .palette input { all: unset; display: block; width: 100%; box-sizing: border-box; padding: 12px 14px; font-size: 15px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .palette ul { list-style: none; margin: 0; padding: 4px; max-height: 300px; overflow-y: auto; }
+  .palette li { display: flex; justify-content: space-between; padding: 7px 10px; border-radius: 6px; }
+  .palette li:first-child { background: rgba(168, 86, 60, .45); }
+  .palette li small { color: #9c917f; margin-right: auto; margin-left: 10px; }
+  .palette kbd { background: transparent; color: #c9bfae; border-color: rgba(255,255,255,.2); }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="kicker">UI overhaul · Proposal B</div>
+    <h1>Canvas-first: floating controls and a command palette</h1>
+    <p class="lede">Keep the original's spirit, a full-bleed drawing surface driven by the keyboard, but make it
+      discoverable. The menu bar and HUD bars go; small floating pieces appear only where they help, and a
+      searchable command palette (<kbd>Ctrl+K</kbd>) lists every action with its shortcut.</p>
+    <nav class="proposals"><a href="index.html">Overview</a><a href="a-studio.html">A · Studio</a><a href="b-canvas.html" aria-current="page">B · Canvas-first</a><a href="c-atelier.html">C · Atelier</a></nav>
+  </header>
+
+  <div class="frame">
+    <div class="titlebar">Chitin — untitled.chitin.json<span class="dots"><i></i><i></i><i></i></span></div>
+    <div class="scroll-x">
+    <div class="app" id="app">
+      <svg class="scene" id="sb"></svg>
+      <div class="glass chips" id="chips" aria-label="Vanishing points"></div>
+      <div class="glass menu-btn" id="cmdBtn" role="button" tabindex="0">⌕ Search commands <kbd style="background:transparent;color:inherit;border-color:rgba(255,255,255,.2)">Ctrl K</kbd></div>
+      <div class="glass meta"><span>100%</span><span id="fov">cone off</span><button id="pal" title="Cycle palette (Ctrl+Shift+P)">● atelier</button></div>
+
+      <div class="glass pop"><span class="pt"></span>
+        <div class="row"><b>Point 1</b><span style="color:#9c917f">Ctrl+1</span></div>
+        <div class="row"><span>Density</span><span><button class="step" id="dm">−</button> <span id="dv">auto</span> <button class="step" id="dp">+</button></span></div>
+        <div class="row" style="color:#9c917f"><span>Level with 2</span><kbd style="background:transparent;color:inherit">H</kbd></div>
+      </div>
+
+      <div class="glass toast">Trace lines cross — <b>Ctrl+Shift+1–9</b> drops a point there</div>
+
+      <div class="glass dock" id="dock">
+        <button aria-pressed="true">Select</button>
+        <button>Trace <kbd>RMB</kbd></button>
+        <span class="sep"></span>
+        <button>Box <kbd>B</kbd></button>
+        <button>Subdivide <kbd>D</kbd></button>
+        <button>Ellipse <kbd>E</kbd></button>
+        <span class="sep"></span>
+        <button data-t="grid" aria-pressed="true">Grid <kbd>G</kbd></button>
+        <button data-t="cone">Cone <kbd>V</kbd></button>
+        <button data-t="reference">Ref <kbd>I</kbd></button>
+      </div>
+
+      <div class="glass palette" id="cmd" role="dialog" aria-label="Command palette">
+        <input id="q" placeholder="Type a command…" aria-label="Search commands">
+        <ul id="list"></ul>
+      </div>
+    </div>
+    </div>
+  </div>
+  <p class="note">Live mock: press <kbd>Ctrl+K</kbd> (or click “Search commands”) and type, <kbd>Esc</kbd> closes.
+    Dock toggles redraw the scene; the palette chip cycles palettes.</p>
+
+  <h2>What changes</h2>
+  <div class="grid2">
+    <div class="card"><h3>Added</h3><ul>
+      <li>Command palette: every action from the F1 list and the menus, fuzzy-searchable, shortcut shown.</li>
+      <li>VP chip strip: 9 slots, placed / empty / selected at a glance.</li>
+      <li>Selection popover next to the selected point (density, level).</li>
+      <li>Context toast replaces the red prompt text in the top bar.</li></ul></div>
+    <div class="card"><h3>Removed / moved</h3><ul>
+      <li>Window menu bar (on macOS the native menu keeps it).</li>
+      <li>Both HUD bars; zoom and FOV move to a small meta chip.</li>
+      <li>F1 overlay becomes the command palette pre-filtered to shortcuts.</li></ul></div>
+    <div class="card"><h3>Build cost</h3><ul>
+      <li>Overlay panel above <code>ViewportControl</code> in a single-cell Grid.</li>
+      <li>One command table (name, gesture, action) feeding palette, menus and help: removes the duplicated lists in <code>Renderer.DrawHelp</code> and <code>MainWindow.axaml</code>.</li>
+      <li>Low–medium effort; largest share is the palette's filtering and focus handling.</li></ul></div>
+    <div class="card"><h3>Risks</h3><ul>
+      <li>Floating chrome can cover the plane; dock and chips need auto-fade while dragging.</li>
+      <li>Less obvious to mouse-only users than Proposal A.</li></ul></div>
+  </div>
+</div>
+<script src="scene.js"></script>
+<script>
+  const state = { palette: 'atelier', grid: true, trace: true, cone: false, reference: false };
+  const names = Object.keys(PALETTES);
+  const svg = document.getElementById('sb');
+  function render() {
+    const c = drawScene(svg, state.palette, state);
+    document.getElementById('chips').innerHTML = c.vp.map((col, i) =>
+      `<i class="${i > 1 ? 'empty' : ''}${i === 0 ? ' sel' : ''}" style="background:${col}">${i + 1}</i>`).join('');
+    document.getElementById('pal').innerHTML = `<span style="color:${c.prompt}">●</span> ${state.palette}`;
+    document.getElementById('fov').textContent = state.cone ? 'FOV 60° · d 360' : 'cone off';
+  }
+  document.getElementById('pal').onclick = () => { state.palette = names[(names.indexOf(state.palette) + 1) % names.length]; render(); };
+  document.getElementById('dock').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.t) { state[b.dataset.t] = !state[b.dataset.t]; b.setAttribute('aria-pressed', state[b.dataset.t]); render(); return; }
+    document.querySelectorAll('#dock button:not([data-t])').forEach(x => x.setAttribute('aria-pressed', x === b));
+  };
+  let d = 0;
+  const showD = () => document.getElementById('dv').textContent = d === 0 ? 'auto' : d;
+  document.getElementById('dm').onclick = () => { d = Math.max(0, d - 1); showD(); };
+  document.getElementById('dp').onclick = () => { d = Math.min(8, d + 1); showD(); };
+
+  // Rows mirror Renderer.DrawHelp and MainWindow.axaml.
+  const CMDS = [
+    ['Drop vanishing point at cursor', 'Points', '1–9'], ['Select vanishing point', 'Points', 'Ctrl+1–9'],
+    ['Delete vanishing point', 'Points', 'Alt+1–9'], ['Drop point at trace crossing', 'Points', 'Ctrl+Shift+1–9'],
+    ['Align points 1 and 2 horizontally', 'Points', 'H'], ['Delete last trace line', 'Trace', 'Backspace'],
+    ['Delete all trace lines', 'Trace', 'Alt+Backspace'], ['Toggle grid', 'View', 'G'], ['Cycle grid style', 'View', 'Ctrl+G'],
+    ['Cone of vision / station point', 'Camera', 'V'], ['1-point preset', 'Camera', ''], ['2-point preset', 'Camera', ''],
+    ['3-point preset', 'Camera', ''], ['Save rig…', 'Camera', ''], ['Box tool', 'Tools', 'B'], ['Subdivision tool', 'Tools', 'D'],
+    ['Ellipse tool', 'Tools', 'E'], ['Load background image', 'Reference', 'Ctrl+I'], ['Toggle background image', 'Reference', 'I'],
+    ['Remove background image', 'Reference', 'Alt+I'], ['Reference settings', 'Reference', 'Ctrl+Alt+I'],
+    ['Paste background image', 'Reference', 'Ctrl+V'], ['Copy plane to clipboard', 'Export', 'Ctrl+C'],
+    ['Copy plane in grayscale', 'Export', 'Ctrl+Shift+C'], ['Export SVG or PNG', 'Export', 'Ctrl+E'], ['Open project', 'File', 'Ctrl+O'],
+    ['Undo', 'Edit', 'Ctrl+Z'], ['Reset document', 'Edit', 'Ctrl+R'], ['Resize document', 'Edit', 'Ctrl+N'],
+    ['Reset camera', 'View', 'Home'], ['Rotate palette assignment', 'Palette', 'S'], ['Cycle palette', 'Palette', 'Ctrl+Shift+P'],
+  ];
+  const cmd = document.getElementById('cmd'), q = document.getElementById('q'), list = document.getElementById('list');
+  function filter() {
+    const t = q.value.toLowerCase().split(/\s+/).filter(Boolean);
+    list.innerHTML = CMDS.filter(([n, g]) => t.every(w => (n + ' ' + g).toLowerCase().includes(w)))
+      .map(([n, g, k]) => `<li>${n}<small>${g}</small>${k ? `<kbd>${k}</kbd>` : ''}</li>`).join('') || '<li>No match</li>';
+  }
+  function open(v) { cmd.classList.toggle('open', v); if (v) { q.value = ''; filter(); q.focus(); } }
+  q.oninput = filter;
+  document.getElementById('cmdBtn').onclick = () => open(true);
+  document.getElementById('cmdBtn').onkeydown = e => { if (e.key === 'Enter') open(true); };
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); open(!cmd.classList.contains('open')); }
+    if (e.key === 'Escape') open(false);
+  });
+  render();
+</script>
+</body>
+</html>

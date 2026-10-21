@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proposal C · Atelier</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .app { --paper: #EFE8DA; --paper2: #E6DDCB; --ink: #23201D; --dim: #7a6f62; --rule: #cfc3ad; --acc: #A8563C;
+    display: grid; grid-template-columns: 220px 1fr; grid-template-rows: 44px 1fr 112px;
+    height: 680px; min-width: 960px; background: var(--paper); color: var(--ink); font-size: 13px; }
+  .serif { font-family: Georgia, "Iowan Old Style", serif; }
+  .top { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 0 14px; border-bottom: 1px solid var(--rule); }
+  .top .brand { font-size: 17px; font-style: italic; }
+  .seg { display: flex; border: 1px solid var(--rule); border-radius: 7px; overflow: hidden; }
+  .seg button { all: unset; cursor: pointer; padding: 5px 11px; border-right: 1px solid var(--rule); }
+  .seg button:last-child { border-right: 0; }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  .seg button:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+  .top select { font: inherit; background: var(--paper2); border: 1px solid var(--rule); border-radius: 6px; padding: 4px 6px; color: var(--ink); }
+  .top .read { margin-left: auto; font: 12px ui-monospace, Consolas, monospace; color: var(--dim); display: flex; gap: 14px; }
+  .layers { border-right: 1px solid var(--rule); padding: 12px 10px; overflow-y: auto; }
+  .layers h4 { margin: 4px 4px 8px; font-size: 15px; font-weight: normal; }
+  .layer { display: flex; align-items: center; gap: 8px; padding: 6px 6px; border-radius: 6px; }
+  .layer:hover { background: var(--paper2); }
+  .layer .eye { all: unset; cursor: pointer; width: 20px; text-align: center; opacity: .9; }
+  .layer .eye[aria-pressed="false"] { opacity: .3; }
+  .layer .eye:focus-visible { outline: 2px solid var(--acc); }
+  .layer .n { margin-left: auto; color: var(--dim); font-size: 11px; }
+  .layer.off span:not(.n) { opacity: .45; }
+  .vp { position: relative; border-radius: 0; overflow: hidden; }
+  .vp svg { width: 100%; height: 100%; display: block; }
+  .ruler { position: absolute; left: 0; right: 0; top: 0; height: 16px; background: repeating-linear-gradient(90deg, rgba(255,255,255,.18) 0 1px, transparent 1px 20px); }
+  .deck { grid-column: 1 / -1; border-top: 1px solid var(--rule); display: grid; grid-template-columns: repeat(9, 1fr); gap: 8px; padding: 10px 14px; }
+  .card9 { border: 1px solid var(--rule); border-radius: 8px; padding: 8px; background: var(--paper2); position: relative; }
+  .card9.empty { background: transparent; border-style: dashed; color: var(--dim); }
+  .card9.sel { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .card9 .dot { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; color: #fff; font-weight: 700; font-size: 11px; vertical-align: middle; }
+  .card9 .k { font: 11px ui-monospace, Consolas, monospace; color: var(--dim); display: block; margin-top: 6px; }
+  .card9 .bar { height: 4px; background: var(--rule); border-radius: 2px; margin-top: 6px; }
+  .card9 .bar i { display: block; height: 100%; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="kicker">UI overhaul · Proposal C</div>
+    <h1>Atelier: layers, a point deck and named rigs</h1>
+    <p class="lede">Lean into what the app has become since the port: a construction tool with boxes, subdivisions,
+      ellipses, a cone of vision and saved camera rigs. A paper-toned shell organises the drawing as layers you can
+      hide, puts the nine vanishing points on a deck you can read at a glance, and makes the camera rig the
+      top-level choice.</p>
+    <nav class="proposals"><a href="index.html">Overview</a><a href="a-studio.html">A · Studio</a><a href="b-canvas.html">B · Canvas-first</a><a href="c-atelier.html" aria-current="page">C · Atelier</a></nav>
+  </header>
+
+  <div class="frame">
+    <div class="titlebar">Chitin — street-corner.chitin.json<span class="dots"><i></i><i></i><i></i></span></div>
+    <div class="scroll-x">
+    <div class="app">
+      <div class="top">
+        <span class="brand serif">Chitin</span>
+        <div class="seg" id="tools" role="group" aria-label="Tool">
+          <button aria-pressed="true">Points</button><button>Trace</button><button>Box</button><button>Subdivide</button><button>Ellipse</button>
+        </div>
+        <label>Rig <select><option>Street corner (2-pt)</option><option>1-Point</option><option>2-Point</option><option>3-Point</option><option>Save current as…</option></select></label>
+        <label>Palette <select id="pal"><option>atelier</option><option>ink</option><option>charcoal</option></select></label>
+        <span class="read"><span>horizon y 260</span><span id="fov">FOV —</span><span>100%</span></span>
+      </div>
+      <aside class="layers">
+        <h4 class="serif">Layers</h4>
+        <div id="layers"></div>
+      </aside>
+      <div class="vp"><svg id="sc"></svg><div class="ruler"></div></div>
+      <div class="deck" id="deck"></div>
+    </div>
+    </div>
+  </div>
+  <p class="note">Live mock: eye icons hide layers, the palette menu recolours the deck and scene, the tool group
+    switches. Selected point is 1.</p>
+
+  <h2>What changes</h2>
+  <div class="grid2">
+    <div class="card"><h3>Added</h3><ul>
+      <li>Layers panel: reference, grid, trace lines, boxes, subdivisions, ellipses, cone; each hideable, with item counts.</li>
+      <li>Point deck: nine cards with colour, shortcut, density bar; empty slots shown as drop targets.</li>
+      <li>Rig picker in the top bar; presets and saved rigs in one list.</li>
+      <li>Light paper-toned chrome around the dark viewport, matching the atelier palette.</li></ul></div>
+    <div class="card"><h3>Removed / moved</h3><ul>
+      <li>Camera menu (now the rig picker), View menu toggles (now layer eyes).</li>
+      <li>HUD bars; horizon, FOV and zoom move to the top bar readout.</li></ul></div>
+    <div class="card"><h3>Build cost</h3><ul>
+      <li>Per-layer visibility in <code>World</code> and <code>GuideBuilder</code>: boxes, subdivisions, ellipses and trace lines each gain a visibility flag (saved in the project file).</li>
+      <li>Highest effort of the three; touches the render path and the project schema.</li></ul></div>
+    <div class="card"><h3>Risks</h3><ul>
+      <li>Schema change needs a version bump and a load test for old files.</li>
+      <li>Deck takes 112 px of height; it should collapse to a chip row on small windows.</li></ul></div>
+  </div>
+</div>
+<script src="scene.js"></script>
+<script>
+  const state = { palette: 'atelier', grid: true, trace: true, cone: false, reference: true, box: true };
+  const LAYERS = [['reference', '▧', 'Reference image', '1'], ['grid', '▦', 'Grid', ''], ['trace', '╱', 'Trace lines', '2'],
+    ['box', '◇', 'Boxes', '1'], ['sub', '▤', 'Subdivisions', '0'], ['ell', '◯', 'Ellipses', '0'], ['cone', '◎', 'Cone of vision', '']];
+  const svg = document.getElementById('sc');
+  function render() {
+    const c = drawScene(svg, state.palette, state);
+    document.getElementById('layers').innerHTML = LAYERS.map(([k, ic, n, cnt]) => {
+      const on = state[k] !== false;
+      return `<div class="layer${on ? '' : ' off'}"><button class="eye" data-k="${k}" aria-pressed="${on}" aria-label="Show ${n}">👁</button><span>${ic}</span><span>${n}</span><span class="n">${cnt}</span></div>`;
+    }).join('');
+    document.getElementById('deck').innerHTML = c.vp.map((col, i) => i < 2
+      ? `<div class="card9${i === 0 ? ' sel' : ''}"><span class="dot" style="background:${col}">${i + 1}</span> ${i === 0 ? 'left' : 'right'}<span class="k">${i === 0 ? '40, 260' : '760, 260'} · Ctrl+${i + 1}</span><div class="bar"><i style="width:${i === 0 ? 100 : 50}%;background:${col}"></i></div></div>`
+      : `<div class="card9 empty"><span class="dot" style="background:${col};opacity:.35">${i + 1}</span> empty<span class="k">press ${i + 1}</span></div>`).join('');
+    document.getElementById('fov').textContent = state.cone ? 'FOV 60° · d 360' : 'FOV —';
+  }
+  document.getElementById('layers').onclick = e => {
+    const b = e.target.closest('.eye'); if (!b) return;
+    state[b.dataset.k] = state[b.dataset.k] === false; render();
+  };
+  document.getElementById('pal').onchange = e => { state.palette = e.target.value; render(); };
+  document.getElementById('tools').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#tools button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  };
+  render();
+</script>
+</body>
+</html>

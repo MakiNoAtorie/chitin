@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chitin UI Proposals</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 8px; }
+  .pick { display: block; text-decoration: none; color: inherit; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .pick:hover, .pick:focus-visible { border-color: var(--accent); }
+  .pick svg { width: 100%; height: 170px; display: block; }
+  .pick div { padding: 12px 14px; }
+  .pick h3 { margin: 0 0 4px; font-size: 16px; }
+  .pick p { margin: 0; color: var(--muted); font-size: 14px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 640px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="kicker">Chitin · UI overhaul</div>
+    <h1>Three directions to review</h1>
+    <p class="lede">Today the app is a menu bar over a full-window viewport, with two HUD bars drawn by the renderer
+      and every feature behind a shortcut or the F1 overlay. Each proposal keeps all shortcuts and the drawing
+      itself unchanged; they differ in how much chrome they add and where settings live.</p>
+    <nav class="proposals"><a href="index.html" aria-current="page">Overview</a><a href="a-studio.html">A · Studio</a><a href="b-canvas.html">B · Canvas-first</a><a href="c-atelier.html">C · Atelier</a></nav>
+  </header>
+
+  <div class="picks">
+    <a class="pick" href="a-studio.html"><svg id="ta"></svg><div><h3>A · Studio</h3><p>Tool rail, inspector, status bar. Familiar design-app shell; every setting gets a control.</p></div></a>
+    <a class="pick" href="b-canvas.html"><svg id="tb"></svg><div><h3>B · Canvas-first</h3><p>Full-bleed canvas, floating dock and chips, Ctrl+K command palette. Closest to the original.</p></div></a>
+    <a class="pick" href="c-atelier.html"><svg id="tc"></svg><div><h3>C · Atelier</h3><p>Paper-toned shell, layers panel, nine-point deck, rig picker. Built around the construction tools.</p></div></a>
+  </div>
+
+  <h2>Side by side</h2>
+  <div class="scroll-x">
+  <table>
+    <tr><th></th><th>A · Studio</th><th>B · Canvas-first</th><th>C · Atelier</th></tr>
+    <tr><td>Viewport space</td><td>Loses ~310 px width</td><td>Full window</td><td>Loses 220 px width, 112 px height</td></tr>
+    <tr><td>Discoverability</td><td>High: everything visible</td><td>Medium: search finds it</td><td>High for layers and points</td></tr>
+    <tr><td>Keyboard flow</td><td>Unchanged</td><td>Unchanged, plus Ctrl+K</td><td>Unchanged</td></tr>
+    <tr><td>Code touched</td><td>MainWindow, World change events</td><td>Overlay + one command table</td><td>MainWindow, World, GuideBuilder, project schema</td></tr>
+    <tr><td>Effort</td><td>Medium</td><td>Low–medium</td><td>High</td></tr>
+    <tr><td>Main risk</td><td>Crowds small windows</td><td>Hidden for mouse-only users</td><td>Schema migration</td></tr>
+  </table>
+  </div>
+
+  <h2>Recommendation</h2>
+  <p class="lede">Start with <b>B</b>: its command table is a prerequisite for A and C anyway (one source for menus,
+    help and shortcuts), it keeps the canvas whole, and it ships without touching geometry or the file format.
+    Add C's layer visibility later if hiding boxes and ellipses turns out to matter in practice.</p>
+</div>
+<script src="scene.js"></script>
+<script>
+  drawScene(document.getElementById('ta'), 'atelier', { cone: true });
+  drawScene(document.getElementById('tb'), 'ink', {});
+  drawScene(document.getElementById('tc'), 'charcoal', { reference: true });
+</script>
+</body>
+</html>

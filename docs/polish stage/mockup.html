@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chitin Sheet Mockup</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=B612+Mono:wght@400;700&display=swap">
+<style>
+  :root { --paper: #F7F7F4; --ink: #111111; --void: #262626; --border: #1A1A1A; --hz: #6E6E6E; --prompt: #B07A2E;
+    --hair: color-mix(in srgb, var(--ink) 28%, var(--paper));
+    --hatch: repeating-linear-gradient(45deg, var(--hair) 0 1px, transparent 1px 6px);
+    --font: "B612 Mono", ui-monospace, monospace; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--void); font: 12px/1.35 var(--font); color: var(--ink); }
+  button, input { font: inherit; color: inherit; }
+  .caps { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; }
+
+  .sheet { max-width: 1160px; margin: 24px auto; background: var(--paper); border: 2px solid var(--ink); outline: 1px solid var(--ink); outline-offset: 4px; padding: 20px 20px 24px; }
+  .sheet > header { display: grid; grid-template-columns: 1fr auto; gap: 8px 24px; align-items: end; border-bottom: 2px solid var(--ink); padding-bottom: 12px; }
+  h1 { font-size: 24px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+  .sub { margin: 6px 0 0; max-width: 72ch; }
+  .controls { display: flex; border: 1px solid var(--ink); }
+  .controls fieldset { border: 0; margin: 0; padding: 0; display: flex; align-items: stretch; border-right: 1px solid var(--ink); }
+  .controls fieldset:last-child { border-right: 0; }
+  .controls legend { position: absolute; left: -9999px; }
+  .opt { all: unset; cursor: pointer; padding: 5px 10px; font: inherit; }
+  .opt[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  :focus-visible { outline: 2px solid var(--prompt) !important; outline-offset: -2px; }
+  .scroll-x { overflow-x: auto; margin-top: 18px; }
+
+  /* Window grid. Rows: menu, ruler, viewport, foot. Columns: tray, ruler, viewport, inspector. */
+  .app { position: relative; display: grid; height: 720px; min-width: 1000px; border: 2px solid var(--ink);
+    grid-template-columns: 40px 20px 1fr 0px; grid-template-rows: 28px 20px 1fr 66px;
+    grid-template-areas: "menu menu menu menu" "tray corner rt insp" "tray rl view insp" "foot foot foot insp";
+    transition: grid-template-columns 100ms linear; }
+  .app.detailed { grid-template-columns: 184px 20px 1fr 304px; }
+
+  .menu { grid-area: menu; display: flex; align-items: stretch; border-bottom: 1px solid var(--ink); }
+  .menu > span { padding: 0 12px; display: flex; align-items: center; border-right: 1px solid var(--hair); }
+  .menu .find { margin-left: auto; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-left: 1px solid var(--ink); }
+  .menu .find input { width: 210px; border: 0; border-bottom: 1px solid var(--ink); background: transparent; padding: 1px 2px; outline: none; }
+  .menu .find input:focus { border-bottom: 2px solid var(--prompt); }
+  .modebtn { all: unset; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-left: 1px solid var(--ink); }
+  .modebtn b { font-weight: 700; }
+  .findlist { position: absolute; top: 27px; right: 128px; width: 440px; z-index: 5; background: var(--paper); border: 2px solid var(--ink); display: none; }
+  .findlist.open { display: block; }
+  .findlist table { border-collapse: collapse; width: 100%; }
+  .findlist td { padding: 4px 8px; border-bottom: 1px solid var(--hair); white-space: nowrap; }
+  .findlist td:last-child { text-align: right; }
+  .findlist tr.on td { background: var(--ink); color: var(--paper); }
+  .findlist .empty td { background: var(--hatch); }
+
+  .corner { grid-area: corner; border-right: 1px solid var(--ink); border-bottom: 1px solid var(--ink); background: var(--hatch); }
+  .rt { grid-area: rt; border-bottom: 1px solid var(--ink); overflow: hidden; }
+  .rl { grid-area: rl; border-right: 1px solid var(--ink); overflow: hidden; }
+  .rt svg, .rl svg { display: block; width: 100%; height: 100%; }
+  .view { grid-area: view; position: relative; overflow: hidden; cursor: crosshair; background: var(--void); }
+  .view svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #scene * { vector-effect: non-scaling-stroke; }
+  .view.panning { cursor: grabbing; }
+  .cm { position: absolute; background: var(--prompt); pointer-events: none; }
+  .cm.t { top: 0; left: calc(50% - 1.5px); width: 3px; height: 12px; }
+  .cm.b { bottom: 0; left: calc(50% - 1.5px); width: 3px; height: 12px; }
+  .cm.l { left: 0; top: calc(50% - 1.5px); width: 12px; height: 3px; }
+  .cm.r { right: 0; top: calc(50% - 1.5px); width: 12px; height: 3px; }
+
+  .tray { grid-area: tray; border-right: 1px solid var(--ink); overflow: hidden; }
+  .tool { all: unset; cursor: pointer; display: grid; grid-template-columns: 39px 1fr; align-items: center; width: 100%; min-height: 39px; border-bottom: 1px solid var(--ink); }
+  .tool b { font-size: 19px; font-weight: 700; text-align: center; }
+  .tool span { white-space: nowrap; overflow: hidden; padding: 4px 8px 4px 2px; }
+  .tool small { display: block; }
+  .tool[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  .tool .opts { display: none; white-space: normal; margin-top: 2px; }
+  .detailed .tool[aria-pressed="true"] .opts { display: block; }
+
+  .foot { grid-area: foot; display: grid; grid-template-columns: 1fr auto; border-top: 2px solid var(--ink); min-width: 0; }
+  .notes { padding: 8px 12px; display: flex; flex-direction: column; justify-content: center; gap: 4px; min-width: 0; }
+  .notes div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .notes .caps { display: inline-block; width: 56px; }
+  .mark { display: inline-block; width: 8px; height: 8px; background: var(--prompt); margin-right: 6px; }
+  .title { border-collapse: collapse; border-left: 2px solid var(--ink); height: 100%; }
+  .title td { border-left: 1px solid var(--ink); border-top: 1px solid var(--ink); padding: 2px 9px; vertical-align: top; white-space: nowrap; }
+  .title tr:first-child td { border-top: 0; }
+  .title td:first-child { border-left: 0; }
+  .title .caps { display: block; }
+  .title .big { font-size: 17px; font-weight: 700; line-height: 1.1; }
+  .title input { width: 4.5ch; border: 0; border-bottom: 1px solid var(--ink); background: transparent; padding: 0; outline: none; }
+  .step { all: unset; cursor: pointer; padding: 0 3px; border: 1px solid var(--ink); line-height: 1.1; }
+
+  .insp { grid-area: insp; border-left: 2px solid var(--ink); overflow-y: auto; overflow-x: hidden; }
+  .app:not(.detailed) .insp { border: 0; overflow: hidden; }
+  .sec { display: flex; align-items: center; gap: 8px; padding: 8px 8px 6px; border-bottom: 1px solid var(--ink); }
+  .sec svg { flex: none; }
+  .sec .k { margin-left: auto; }
+  .ruled { border-collapse: collapse; width: 100%; margin-bottom: 12px; }
+  .ruled td { border-bottom: 1px solid var(--hair); padding: 0; white-space: nowrap; height: 25px; }
+  .ruled td + td { border-left: 1px solid var(--hair); }
+  .ruled td.l { padding: 0 8px; }
+  .ruled td.hatch { background: var(--hatch); }
+  .cell { all: unset; cursor: pointer; display: block; width: 100%; height: 100%; padding: 0 8px; line-height: 25px; box-sizing: border-box; }
+  .cell:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .ruled tr.on td { background: var(--ink); color: var(--paper); }
+  .chip { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px; }
+  .box { display: inline-block; width: 10px; height: 10px; border: 1px solid currentColor; margin-right: 6px; vertical-align: -1px; }
+  .box.on { background: currentColor; }
+  .sw { display: inline-flex; gap: 1px; vertical-align: -1px; margin-left: 8px; }
+  .sw s { width: 7px; height: 10px; display: block; }
+
+  .review { display: grid; grid-template-columns: 1fr 1fr; margin-top: 18px; border: 1px solid var(--ink); }
+  .review section { padding: 10px 14px; }
+  .review section + section { border-left: 1px solid var(--ink); }
+  .review ul { margin: 6px 0 0; padding-left: 18px; }
+  .review li { margin: 3px 0; }
+  @media (max-width: 760px) { .review { grid-template-columns: 1fr; } .review section + section { border-left: 0; border-top: 1px solid var(--ink); } .sheet > header { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <header>
+    <div>
+      <div class="caps">Chitin · polish stage · P0 rev B</div>
+      <h1>Sheet mockup</h1>
+      <p class="sub">Compact canvas by default; Ctrl+K opens the detailed panels in the same frame, Ctrl+F finds a
+        command. Drag to pan, wheel to zoom. VP 1 starts off-screen, so its tab is pinned to the ruler end.</p>
+    </div>
+    <div class="controls">
+      <fieldset id="palSel"><legend>Palette</legend></fieldset>
+      <fieldset id="modeSel"><legend>Mode</legend><button class="opt" data-v="0" aria-pressed="true">Compact</button><button class="opt" data-v="1">Detailed</button></fieldset>
+    </div>
+  </header>
+
+  <div class="scroll-x">
+  <div class="app" id="app">
+    <div class="menu">
+      <span>File</span><span>Edit</span><span>View</span><span>Reference</span><span>Camera</span><span>Help</span>
+      <label class="find"><span class="caps">Find</span><input id="find" placeholder="command" autocomplete="off" aria-label="Find a command" aria-controls="findlist"><span class="caps">Ctrl F</span></label>
+      <button class="modebtn" id="modeBtn"><span class="caps">Ctrl K</span><b id="modeName">Compact</b></button>
+    </div>
+    <div class="findlist" id="findlist" role="listbox"></div>
+    <div class="tray" id="tray"></div>
+    <div class="corner"></div>
+    <div class="rt"><svg id="rt"></svg></div>
+    <div class="rl"><svg id="rl"></svg></div>
+    <div class="view" id="view" tabindex="0" aria-label="Drawing viewport"><svg id="scene"></svg>
+      <i class="cm t"></i><i class="cm b"></i><i class="cm l"></i><i class="cm r"></i></div>
+    <div class="foot">
+      <div class="notes"><div id="note1"></div><div id="note2"></div></div>
+      <table class="title" id="title"></table>
+    </div>
+    <aside class="insp" id="insp" aria-label="Inspector"></aside>
+  </div>
+  </div>
+
+  <div class="review">
+    <section>
+      <div class="caps">Try</div>
+      <ul>
+        <li>Ctrl+K compact ↔ detailed: the centring marks stay on the same world point.</li>
+        <li>Ctrl+F, type “grid”, arrows, Enter. Esc closes.</li>
+        <li>B, D, E tools · Esc points · G grid · Ctrl+G style · V cone · I reference</li>
+        <li>Ctrl+1 / Ctrl+2 or a ruler tab: select · [ and ] density · Home recentre</li>
+        <li>Detailed mode: the revision table logs each change.</li>
+      </ul>
+    </section>
+    <section>
+      <div class="caps">Review</div>
+      <ul>
+        <li>Is the sheet language (heavy frame, notched tabs, detail bubbles, hatching, numbered notes) the right amount of style?</li>
+        <li>Title block: large zoom and point figures, small labels.</li>
+        <li id="contrast"></li>
+      </ul>
+    </section>
+  </div>
+</div>
+
+<script src="../ui-proposals/scene.js"></script>
+<script>
+  const VPS = [VP1, VP2];
+  const DOC = 2.5; // Mock plane units to document px: 560 x 440 -> 1400 x 1100.
+  const TOOLS = [
+    ['P', 'Points', 'Esc', '1–9 drop · Ctrl+1–9 select'],
+    ['T', 'Trace', 'right-drag', 'Ctrl snaps 5° · Shift 15°'],
+    ['B', 'Box', 'B', 'width, depth, height · 1 / 2 lock axis'],
+    ['D', 'Subdivide', 'D', 'click a face · 2–9 cells · Enter'],
+    ['E', 'Ellipse', 'E', 'click a face · drag the radius'],
+  ];
+  const HINTS = {
+    P: 'Drag a point to move it · 1–9 drops a point at the cursor',
+    T: 'Right-drag pulls a trace line · Ctrl snaps 5°, Shift 15°',
+    B: 'Drag width, then depth, then height · 1 / 2 force an axis',
+    D: 'Click a box face or four corners · 2–9 cells · Enter commits',
+    E: 'Click a box face or four corners, then drag from the centre',
+  };
+  const STYLES = ['both', 'vertical', 'horizontal'];
+  // Rows mirror Renderer.DrawHelp and MainWindow.axaml; the fourth field is set where the mockup can act.
+  const CMDS = [
+    ['Detailed panels', 'View', 'Ctrl+K', () => setMode(!state.detailed)],
+    ['Toggle grid', 'View', 'G', () => act('grid')], ['Cycle grid style', 'View', 'Ctrl+G', () => act('gridStyle')],
+    ['Reset camera', 'View', 'Home', () => { home(); place(); }],
+    ['Cone of vision / station point', 'Camera', 'V', () => act('cone')],
+    ['1-point preset', 'Camera', ''], ['2-point preset', 'Camera', ''], ['3-point preset', 'Camera', ''], ['Save rig…', 'Camera', ''],
+    ['Drop vanishing point at cursor', 'Points', '1–9'], ['Select vanishing point', 'Points', 'Ctrl+1–9'],
+    ['Delete vanishing point', 'Points', 'Alt+1–9'], ['Drop point at trace crossing', 'Points', 'Ctrl+Shift+1–9'],
+    ['Align points 1 and 2 horizontally', 'Points', 'H'],
+    ['Raise density', 'Points', ']', () => act('dens+')], ['Lower density', 'Points', '[', () => act('dens-')],
+    ['Delete last trace line', 'Trace', 'Backspace'], ['Delete all trace lines', 'Trace', 'Alt+Backspace'],
+    ['Box tool', 'Tools', 'B', () => setTool('B')], ['Subdivision tool', 'Tools', 'D', () => setTool('D')], ['Ellipse tool', 'Tools', 'E', () => setTool('E')],
+    ['Load background image', 'Reference', 'Ctrl+I'], ['Toggle background image', 'Reference', 'I', () => act('reference')],
+    ['Remove background image', 'Reference', 'Alt+I'], ['Reference settings', 'Reference', 'Ctrl+Alt+I'], ['Paste background image', 'Reference', 'Ctrl+V'],
+    ['Copy plane to clipboard', 'Export', 'Ctrl+C'], ['Copy plane in grayscale', 'Export', 'Ctrl+Shift+C'], ['Export SVG or PNG', 'Export', 'Ctrl+E'],
+    ['Open project', 'File', 'Ctrl+O'], ['Undo', 'Edit', 'Ctrl+Z'], ['Reset document', 'Edit', 'Ctrl+R'], ['Resize document', 'Edit', 'Ctrl+N'],
+    ['Rotate palette assignment', 'Palette', 'S'], ['Cycle palette', 'Palette', 'Ctrl+Shift+P', () => cyclePalette()],
+  ];
+  const state = { palette: 'ink', grid: true, gridStyle: 0, trace: true, cone: false, reference: false, box: true,
+    selected: 0, tool: 'P', detailed: false, dens: [0, 0], opacity: 40, revs: [] };
+  let zoom = 1, cam = { x: 0, y: 0 }, size = { w: 0, h: 0 }, mouse = null, findIdx = 0, findRows = [];
+
+  const $ = id => document.getElementById(id);
+  const app = $('app'), view = $('view'), svg = $('scene');
+  const pal = () => PALETTES[state.palette];
+  const FONT = '"B612 Mono", monospace';
+
+  // WCAG relative luminance and contrast; P4 asserts the same numbers.
+  function lum(hex) {
+    const v = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+  }
+  function contrast(a, b) { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); }
+
+  const w2s = p => [(p[0] + cam.x) * zoom, (p[1] + cam.y) * zoom];
+  const s2w = p => [p[0] / zoom - cam.x, p[1] / zoom - cam.y];
+  const toDoc = p => [Math.round((p[0] - PLANE.x) * DOC), Math.round((p[1] - PLANE.y) * DOC)];
+
+  function home() {
+    // Fit the plane height, then pan so VP 1 sits off the left edge.
+    zoom = (size.h * 0.94) / PLANE.h;
+    const cx = VP1[0] + (size.w / 2 + 60) / zoom;
+    cam = { x: size.w / 2 / zoom - cx, y: size.h / 2 / zoom - (PLANE.y + PLANE.h / 2) };
+  }
+
+  function drawWorld() {
+    drawScene(svg, state.palette, state);
+    svg.removeAttribute('viewBox');
+    const g = document.createElementNS(NS, 'g');
+    g.id = 'camg';
+    [...svg.childNodes].filter(n => n.tagName !== 'defs').forEach(n => g.appendChild(n));
+    svg.appendChild(g);
+    const c = pal();
+    for (const [k, v] of Object.entries({ paper: c.paper, ink: c.ink, void: c.void, border: c.border, hz: c.horizon, prompt: c.prompt }))
+      document.documentElement.style.setProperty('--' + k, v);
+  }
+
+  function place() {
+    $('camg').setAttribute('transform', `scale(${zoom}) translate(${cam.x} ${cam.y})`);
+    rulers();
+    titleBlock();
+  }
+
+  function text(parent, attrs, str, size, weight = 400) {
+    const t = el('text', attrs, parent);
+    t.setAttribute('style', `font: ${weight} ${size}px ${FONT}`);
+    t.textContent = str;
+    return t;
+  }
+
+  function rulers() {
+    const c = pal(), R = 20;
+    const rt = $('rt'), rl = $('rl');
+    rt.innerHTML = rl.innerHTML = '';
+    const pxPerDoc = zoom / DOC;
+    const minor = [5, 10, 25, 50, 100, 250, 500, 1000].find(s => s * pxPerDoc >= 7) || 1000;
+    const major = minor * (minor * 5 * pxPerDoc >= 48 ? 5 : 10);
+    [['x', rt, size.w, PLANE.x, 0], ['y', rl, size.h, PLANE.y, 1]].forEach(([axis, r, len, origin, i]) => {
+      const camA = axis === 'x' ? cam.x : cam.y;
+      const toS = u => (u / DOC + origin + camA) * zoom;
+      const u0 = Math.floor((-camA - origin) * DOC / minor) * minor;
+      const u1 = (len / zoom - camA - origin) * DOC;
+      for (let u = u0; u <= u1; u += minor) {
+        const s = Math.round(toS(u)) + 0.5, big = u % major === 0, half = u % (major / 2) === 0, h = big ? 9 : half ? 6 : 3;
+        el('line', axis === 'x' ? { x1: s, x2: s, y1: R - h, y2: R, stroke: c.ink } : { y1: s, y2: s, x1: R - h, x2: R, stroke: c.ink }, r);
+        if (big) text(r, axis === 'x' ? { x: s + 3, y: 9, fill: c.ink } : { x: 9, y: s - 3, fill: c.ink, transform: `rotate(-90 9 ${s - 3})` }, u, 8.5);
+      }
+      if (axis === 'y' && VP1[1] === VP2[1]) {
+        const s = w2s(VP1)[1];
+        el('path', { d: `M${R} ${s} l-8 -5 v10 z`, fill: c.ink }, r);
+      }
+      if (mouse) {
+        const s = Math.round(mouse[i]) + 0.5;
+        el('line', axis === 'x' ? { x1: s, x2: s, y1: 0, y2: R, stroke: c.prompt, 'stroke-width': 1.5 } : { y1: s, y2: s, x1: 0, x2: R, stroke: c.prompt, 'stroke-width': 1.5 }, r);
+      }
+      // Level points share a ruler position; step later tabs along so each stays readable.
+      let prev = -Infinity;
+      VPS.map((vp, n) => [w2s(vp)[i], n]).sort((p, q) => p[0] - q[0]).forEach(([s, n]) => {
+        if (s - prev < 21) s = prev + 21;
+        prev = s;
+        tab(r, axis, len, s, n);
+      });
+    });
+  }
+
+  // Notched index tab: paper body, ink figure, VP colour band next to the viewport.
+  function tab(r, axis, len, s, n) {
+    const c = pal(), sel = state.selected === n, W = 20, R = 20;
+    const pinned = s < W / 2 ? -1 : s > len - W / 2 ? 1 : 0;
+    const at = pinned === -1 ? W / 2 + 1 : pinned === 1 ? len - W / 2 - 1 : s;
+    const g = el('g', { tabindex: 0, role: 'button', 'aria-label': `Select vanishing point ${n + 1}`, style: 'cursor:pointer' }, r);
+    const a = at - W / 2, b = at + W / 2;
+    const body = axis === 'x' ? `M${a} ${R} V5 L${a + 4} 1 H${b - 4} L${b} 5 V${R} Z` : `M${R} ${a} H5 L1 ${a + 4} V${b - 4} L5 ${b} H${R} Z`;
+    el('path', { d: body, fill: sel ? c.ink : c.paper, stroke: c.ink }, g);
+    el('rect', axis === 'x' ? { x: a, y: R - 4, width: W, height: 4, fill: c.vp[n] } : { x: R - 4, y: a, width: 4, height: W, fill: c.vp[n] }, g);
+    text(g, axis === 'x' ? { x: at, y: 13, 'text-anchor': 'middle', fill: sel ? c.paper : c.ink } : { x: 9.5, y: at + 4, 'text-anchor': 'middle', fill: sel ? c.paper : c.ink }, n + 1, 11, 700);
+    if (pinned) {
+      // Arrow points to where the VP is; on the top ruler the figure is its distance past the edge.
+      const e = pinned === -1 ? b + 3 : a - 3;
+      if (axis === 'x') {
+        const past = Math.round(Math.abs(pinned === -1 ? s : s - len) / zoom * DOC);
+        el('path', { d: pinned === -1 ? `M${e + 6} 5 L${e} 10 L${e + 6} 15 Z` : `M${e - 6} 5 L${e} 10 L${e - 6} 15 Z`, fill: c.ink }, r);
+        text(r, { x: pinned === -1 ? e + 9 : e - 9, y: 14, 'text-anchor': pinned === -1 ? 'start' : 'end', fill: c.ink }, past, 9, 700);
+      } else {
+        el('path', { d: pinned === -1 ? `M5 ${e + 6} L10 ${e} L15 ${e + 6} Z` : `M5 ${e - 6} L10 ${e} L15 ${e - 6} Z`, fill: c.ink }, r);
+      }
+    }
+    g.onclick = () => select(n);
+    g.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') select(n); };
+  }
+
+  function titleBlock() {
+    const d = state.dens[state.selected];
+    const zoomCell = state.detailed
+      ? `<input id="zoomIn" class="big" type="number" min="5" max="500" value="${Math.round(zoom * 100)}" aria-label="Zoom percent"><span class="big">%</span>`
+      : `<span class="big">${Math.round(zoom * 100)}%</span>`;
+    const densCell = state.detailed
+      ? `<button class="step" data-act="dens-" aria-label="Lower density">[</button> ${d || 'auto'} <button class="step" data-act="dens+" aria-label="Raise density">]</button>`
+      : (d || 'auto');
+    $('title').innerHTML = `
+      <tr><td rowspan="2"><span class="caps">Zoom</span>${zoomCell}</td>
+          <td rowspan="2"><span class="caps">Point</span><span class="big">VP ${state.selected + 1}</span><br>${toDoc(VPS[state.selected]).join(', ')}</td>
+          <td><span class="caps">Density</span>${densCell}</td><td><span class="caps">Cone</span>${state.cone ? '60° · d 900' : 'off'}</td><td><span class="caps">Tool</span>${TOOLS.find(t => t[0] === state.tool)[1]}</td></tr>
+      <tr><td><span class="caps">Sheet</span>untitled</td><td><span class="caps">Size</span>1400 × 1100</td><td><span class="caps">Palette</span>${state.palette}</td></tr>`;
+    const zi = $('zoomIn');
+    if (zi) zi.onchange = () => setZoom(Math.min(5, Math.max(0.05, zi.value / 100)), [size.w / 2, size.h / 2]);
+  }
+
+  function tray() {
+    $('tray').innerHTML = TOOLS.map(([k, name, key, opts]) =>
+      `<button class="tool" data-tool="${k}" aria-pressed="${state.tool === k}" aria-label="${name} tool"><b>${k}</b><span>${name} <small class="caps">${key}</small><small class="opts">${opts}</small></span></button>`).join('');
+  }
+
+  function notes(extra) {
+    $('note1').innerHTML = `<span class="caps">Note 1</span>${extra || HINTS[state.tool]}`;
+    $('note2').innerHTML = state.trace ? '<span class="caps">Note 2</span><span class="mark"></span>Trace lines cross — Ctrl+Shift+1–9 drops a point there' : '';
+  }
+
+  // Detail callout: split circle, section letter over sheet number.
+  const bubble = (letter, sheet) => `<svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="12" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="13" x2="25" y2="13" stroke="currentColor"/><text x="13" y="11" text-anchor="middle" style="font:700 9px ${FONT}" fill="currentColor">${letter}</text><text x="13" y="22" text-anchor="middle" style="font:400 7px ${FONT}" fill="currentColor">${sheet}</text></svg>`;
+  const sec = (letter, title, key) => `<div class="sec">${bubble(letter, '01')}<span class="caps">${title}</span>${key ? `<span class="caps k">${key}</span>` : ''}</div>`;
+
+  function inspector() {
+    const c = pal();
+    const box = on => `<span class="box${on ? ' on' : ''}"></span>`;
+    const row = (label, value, act) => `<tr><td class="l">${label}</td><td>${act ? `<button class="cell" data-act="${act}">${value}</button>` : `<span class="cell" style="cursor:default">${value}</span>`}</td></tr>`;
+    const hatchRow = label => `<tr><td class="l">${label}</td><td class="hatch"></td></tr>`;
+    let vpRows = '';
+    for (let n = 0; n < 9; n++) {
+      const vp = VPS[n];
+      vpRows += vp
+        ? `<tr class="${state.selected === n ? 'on' : ''}"><td style="width:46px"><button class="cell" data-act="sel${n}" aria-label="Select point ${n + 1}"><span class="chip" style="background:${c.vp[n]}"></span>${n + 1}</button></td><td class="l">${toDoc(vp).join(', ')}</td><td class="l" style="width:52px">${state.dens[n] || 'auto'}</td></tr>`
+        : `<tr><td class="l"><span class="chip" style="outline:1px solid currentColor;outline-offset:-1px"></span>${n + 1}</td><td class="hatch" colspan="2"></td></tr>`;
+    }
+    const pals = Object.entries(PALETTES).map(([name, p]) =>
+      `<tr class="${name === state.palette ? 'on' : ''}"><td><button class="cell" data-act="pal:${name}">${name}<span class="sw">${p.vp.map(v => `<s style="background:${v}"></s>`).join('')}</span></button></td></tr>`).join('');
+    const revs = state.revs.slice(-5).reverse();
+    const revRows = revs.length
+      ? revs.map(([n, name]) => `<tr><td class="l" style="width:46px">${String(n).padStart(2, '0')}</td><td class="l">${name}</td></tr>`).join('')
+      : `<tr><td class="l" style="width:46px">—</td><td class="hatch"></td></tr>`;
+    $('insp').innerHTML = `
+      ${sec('A', 'Vanishing points', 'Ctrl 1–9')}<table class="ruled">${vpRows}</table>
+      ${sec('B', 'Guides')}<table class="ruled">
+        ${row('Grid · G', box(state.grid) + (state.grid ? 'on' : 'off'), 'grid')}
+        ${row('Style · Ctrl+G', STYLES[state.gridStyle], 'gridStyle')}
+        ${row('Trace lines', box(state.trace) + (state.trace ? 'on' : 'off'), 'trace')}
+        ${row('Cone · V', box(state.cone) + (state.cone ? 'on' : 'off'), 'cone')}
+        ${row('Level 1–2 · H', 'level', 'level')}</table>
+      ${sec('C', 'Camera')}<table class="ruled">
+        ${row('Preset', '2-point', 'preset')}
+        ${state.cone ? row('FOV', '60°') + row('Station distance', '900') : hatchRow('FOV') + hatchRow('Station distance')}
+        ${row('Saved rigs', 'street corner', 'preset')}</table>
+      ${sec('D', 'Reference')}<table class="ruled">
+        ${row('Show · I', box(state.reference) + (state.reference ? 'on' : 'off'), 'reference')}
+        ${row('Opacity', state.opacity + '%', 'opacity')}</table>
+      ${sec('E', 'Palette', 'Ctrl Shift P')}<table class="ruled">${pals}</table>
+      ${sec('F', 'Revisions', 'Ctrl Z')}<table class="ruled">${revRows}</table>`;
+  }
+
+  function contrastNote() {
+    const c = pal();
+    $('contrast').textContent = `Contrast (${state.palette}): ink on paper ${contrast(c.ink, c.paper).toFixed(1)}:1. ` +
+      `VP colours now appear only as bands and chips, never under text.`;
+  }
+
+  function full() { drawWorld(); place(); tray(); notes(); inspector(); contrastNote(); syncControls(); }
+  function soft() { place(); inspector(); notes(); }
+
+  function syncControls() {
+    document.querySelectorAll('#palSel .opt').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === state.palette));
+    document.querySelectorAll('#modeSel .opt').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === (state.detailed ? '1' : '0')));
+    $('modeName').textContent = state.detailed ? 'Detailed' : 'Compact';
+  }
+
+  let revNo = 0;
+  function log(name) { state.revs.push([++revNo, name]); }
+  function select(n) { state.selected = n; full(); }
+  function setTool(t) { state.tool = state.tool === t ? 'P' : t; tray(); notes(); titleBlock(); }
+  function setZoom(z, at) {
+    const before = s2w(at);
+    zoom = z;
+    cam = { x: at[0] / zoom - before[0], y: at[1] / zoom - before[1] };
+    place();
+  }
+  function setMode(detailed) { state.detailed = detailed; app.classList.toggle('detailed', detailed); full(); }
+  function cyclePalette() { const k = Object.keys(PALETTES); state.palette = k[(k.indexOf(state.palette) + 1) % k.length]; log('Palette ' + state.palette); full(); }
+
+  const NAMES = { grid: 'Grid', trace: 'Trace lines', cone: 'Cone of vision', reference: 'Reference', level: 'Level points 1–2', preset: 'Camera preset' };
+  function act(a) {
+    if (a.startsWith('pal:')) { state.palette = a.slice(4); log('Palette ' + state.palette); return full(); }
+    if (a.startsWith('sel')) return select(+a.slice(3));
+    switch (a) {
+      case 'grid': case 'trace': case 'cone': case 'reference': state[a] = !state[a]; log(NAMES[a] + (state[a] ? ' on' : ' off')); return full();
+      case 'gridStyle': state.gridStyle = (state.gridStyle + 1) % 3; log('Grid style ' + STYLES[state.gridStyle]); return full();
+      case 'opacity': state.opacity = state.opacity >= 100 ? 10 : state.opacity + 10; log('Reference opacity ' + state.opacity + '%'); return inspector();
+      case 'dens-': case 'dens+': {
+        const i = state.selected, v = Math.min(16, Math.max(0, state.dens[i] + (a === 'dens+' ? 1 : -1)));
+        if (v !== state.dens[i]) { state.dens[i] = v; log(`VP ${i + 1} density ${v || 'auto'}`); }
+        return soft();
+      }
+      case 'level': case 'preset': return notes(`${NAMES[a]} — not simulated in the mockup`);
+    }
+  }
+
+  // Find: per-word, case-insensitive match over name and group (P1 CHECK find_matches_words).
+  const findInput = $('find'), findList = $('findlist');
+  function findMatches(q) {
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    return CMDS.filter(([n, g]) => words.every(w => (n + ' ' + g).toLowerCase().includes(w)));
+  }
+  function renderFind() {
+    findRows = findMatches(findInput.value);
+    findIdx = Math.min(findIdx, Math.max(0, findRows.length - 1));
+    findList.innerHTML = '<table>' + (findRows.length
+      ? findRows.map(([n, g, k], i) => `<tr class="${i === findIdx ? 'on' : ''}" data-i="${i}" role="option" aria-selected="${i === findIdx}"><td>${n}</td><td class="caps">${g}</td><td>${k}</td></tr>`).join('')
+      : '<tr class="empty"><td colspan="3">No command matches</td></tr>') + '</table>';
+    findList.classList.add('open');
+    findList.querySelector('tr.on')?.scrollIntoView({ block: 'nearest' });
+  }
+  function runFind(i) {
+    const cmd = findRows[i];
+    closeFind();
+    if (!cmd) return;
+    if (cmd[3]) cmd[3](); else notes(`${cmd[0]} (${cmd[2] || 'menu'}) — not simulated in the mockup`);
+  }
+  function closeFind() { findList.classList.remove('open'); findInput.value = ''; findIdx = 0; view.focus(); }
+  findInput.addEventListener('input', () => { findIdx = 0; renderFind(); });
+  findInput.addEventListener('focus', renderFind);
+  findInput.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { findIdx = Math.min(findRows.length - 1, findIdx + 1); renderFind(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { findIdx = Math.max(0, findIdx - 1); renderFind(); e.preventDefault(); }
+    else if (e.key === 'Enter') runFind(findIdx);
+    else if (e.key === 'Escape') closeFind();
+  });
+  findList.addEventListener('mousedown', e => { const tr = e.target.closest('[data-i]'); if (tr) { e.preventDefault(); runFind(+tr.dataset.i); } });
+  findInput.addEventListener('blur', () => findList.classList.remove('open'));
+
+  // Panels resize the viewport; shift the camera by half the change so the centre stays put.
+  new ResizeObserver(() => {
+    const w = view.clientWidth, h = view.clientHeight;
+    if (!size.w) { size = { w, h }; home(); full(); return; }
+    cam.x += (w - size.w) / 2 / zoom;
+    cam.y += (h - size.h) / 2 / zoom;
+    size = { w, h };
+    place();
+  }).observe(view);
+
+  document.addEventListener('click', e => {
+    const a = e.target.closest('[data-act]'); if (a) return act(a.dataset.act);
+    const t = e.target.closest('[data-tool]'); if (t) { state.tool = t.dataset.tool; tray(); notes(); titleBlock(); return; }
+    const p = e.target.closest('#palSel .opt'); if (p) { state.palette = p.dataset.v; return full(); }
+    const m = e.target.closest('#modeSel .opt'); if (m) return setMode(m.dataset.v === '1');
+    if (e.target.closest('#modeBtn')) setMode(!state.detailed);
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    const k = e.key.toLowerCase(), ctrl = e.ctrlKey || e.metaKey;
+    let handled = true;
+    if (ctrl && k === 'k') setMode(!state.detailed);
+    else if (ctrl && k === 'f') findInput.focus();
+    else if (ctrl && e.shiftKey && k === 'p') cyclePalette();
+    else if (ctrl && k === 'g') act('gridStyle');
+    else if (ctrl && (k === '1' || k === '2')) select(+k - 1);
+    else if (ctrl) handled = false;
+    else if (k === 'b' || k === 'd' || k === 'e') setTool(k.toUpperCase());
+    else if (k === 'escape') { state.tool = 'P'; tray(); notes(); titleBlock(); }
+    else if (k === 'g') act('grid');
+    else if (k === 'v') act('cone');
+    else if (k === 'i') act('reference');
+    else if (k === '[') act('dens-');
+    else if (k === ']') act('dens+');
+    else if (k === 'home') { home(); place(); }
+    else handled = false;
+    if (handled) e.preventDefault();
+  });
+
+  let drag = null;
+  view.addEventListener('pointerdown', e => { drag = [e.clientX, e.clientY]; view.setPointerCapture(e.pointerId); view.classList.add('panning'); view.focus(); });
+  view.addEventListener('pointerup', () => { drag = null; view.classList.remove('panning'); });
+  view.addEventListener('pointermove', e => {
+    const r = view.getBoundingClientRect();
+    mouse = [e.clientX - r.left, e.clientY - r.top];
+    if (drag) { cam.x += (e.clientX - drag[0]) / zoom; cam.y += (e.clientY - drag[1]) / zoom; drag = [e.clientX, e.clientY]; place(); }
+    else rulers();
+  });
+  view.addEventListener('pointerleave', () => { mouse = null; rulers(); });
+  view.addEventListener('wheel', e => {
+    e.preventDefault();
+    const r = view.getBoundingClientRect();
+    setZoom(Math.min(5, Math.max(0.05, zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))), [e.clientX - r.left, e.clientY - r.top]);
+  }, { passive: false });
+
+  $('palSel').innerHTML = Object.keys(PALETTES).map(n => `<button class="opt" data-v="${n}">${n}</button>`).join('');
+  document.fonts.ready.then(() => size.w && full());
+</script>
+</body>
+</html>

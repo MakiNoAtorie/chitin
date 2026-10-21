@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proposal A · Studio</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .app { --chrome: #1f1c1a; --chrome2: #272320; --text: #d9cfbf; --dim: #8f8577; --hi: #A8563C;
+    display: grid; grid-template-columns: 48px 1fr 264px; grid-template-rows: 30px 1fr 26px;
+    height: 640px; min-width: 960px; background: var(--chrome); color: var(--text); font-size: 12px; }
+  .menubar { grid-column: 1 / -1; display: flex; align-items: center; gap: 2px; padding: 0 8px; background: var(--chrome2); border-bottom: 1px solid #000; }
+  .menubar span { padding: 4px 9px; border-radius: 4px; }
+  .menubar span:hover { background: #3a3430; }
+  .menubar .doc { margin-left: auto; color: var(--dim); }
+  .rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; background: var(--chrome2); border-right: 1px solid #000; }
+  .rail button { all: unset; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 6px; cursor: pointer; position: relative; color: var(--text); }
+  .rail button:hover { background: #3a3430; }
+  .rail button[aria-pressed="true"] { background: var(--hi); color: #fff; }
+  .rail button:focus-visible { outline: 2px solid var(--hi); outline-offset: 1px; }
+  .rail button small { position: absolute; right: 2px; bottom: 1px; font-size: 9px; opacity: .7; }
+  .rail hr { border: 0; border-top: 1px solid #3a3430; width: 100%; margin: 4px 0; }
+  .vp { position: relative; overflow: hidden; }
+  .vp svg { width: 100%; height: 100%; display: block; }
+  .inspector { background: var(--chrome2); border-left: 1px solid #000; overflow-y: auto; }
+  .sec { border-bottom: 1px solid #000; padding: 10px 12px; }
+  .sec h4 { margin: 0 0 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); display: flex; justify-content: space-between; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
+  .row input[type=range] { width: 120px; accent-color: var(--hi); }
+  .vps { display: grid; grid-template-columns: repeat(9, 1fr); gap: 3px; }
+  .vps i { aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-weight: 700; font-size: 10px; color: #f5f0e6; border: 1px solid #000; }
+  .vps i.empty { background: transparent !important; border: 1px dashed #5a524a; color: #5a524a; }
+  .vps i.sel { outline: 2px solid #f5f0e6; outline-offset: 1px; }
+  .swatches { display: flex; gap: 6px; }
+  .swatches button { all: unset; cursor: pointer; flex: 1; border-radius: 5px; padding: 5px; border: 1px solid #3a3430; text-align: center; }
+  .swatches button[aria-pressed="true"] { border-color: var(--hi); background: #3a3430; }
+  .swatches b { display: block; height: 14px; border-radius: 3px; margin-bottom: 3px; }
+  .readout { font: 12px ui-monospace, Consolas, monospace; color: var(--text); }
+  .statusbar { grid-column: 1 / -1; display: flex; gap: 18px; align-items: center; padding: 0 10px; background: var(--chrome2); border-top: 1px solid #000; color: var(--dim); }
+  .statusbar .hint { color: var(--text); }
+  .statusbar .right { margin-left: auto; display: flex; gap: 18px; }
+  label.tg { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  label.tg input { accent-color: var(--hi); }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="kicker">UI overhaul · Proposal A</div>
+    <h1>Studio: docked tool rail and inspector</h1>
+    <p class="lede">Turn the keyboard-only HUD into a conventional design-app shell. Tools get a left rail, every
+      setting that today lives in a key combo or a modal dialog gets a live control in a right inspector, and the
+      two drawn HUD bars become a real status bar. Shortcuts stay exactly as they are.</p>
+    <nav class="proposals"><a href="index.html">Overview</a><a href="a-studio.html" aria-current="page">A · Studio</a><a href="b-canvas.html">B · Canvas-first</a><a href="c-atelier.html">C · Atelier</a></nav>
+  </header>
+
+  <div class="frame">
+    <div class="titlebar">Chitin — untitled.chitin.json<span class="dots"><i></i><i></i><i></i></span></div>
+    <div class="scroll-x">
+    <div class="app">
+      <div class="menubar"><span>File</span><span>Edit</span><span>View</span><span>Reference</span><span>Camera</span><span>Help</span><span class="doc">1400 × 900 · 2-point</span></div>
+      <div class="rail" id="rail">
+        <button data-hint="Drag a point to move it · 1–9 drops a point at the cursor" aria-pressed="true" aria-label="Select">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 8-6 1.5L10 19z"/></svg></button>
+        <button data-hint="Click to drop the next free vanishing point" aria-label="Vanishing point"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg><small>1–9</small></button>
+        <button data-hint="Drag to pull a trace line · Ctrl snaps 5°, Shift snaps 15°" aria-label="Trace line"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2"><path d="M3 20L21 4"/></svg></button>
+        <hr>
+        <button data-hint="Box: drag width, then depth, then height · 1/2 force an axis" aria-label="Box tool"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v10l-8 4-8-4V7z M12 3v0M4 7l8 4 8-4M12 11v10"/></svg><small>B</small></button>
+        <button data-hint="Subdivide: click a face, 2–9 sets cells, Enter commits" aria-label="Subdivision tool"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16"/><path d="M12 4v16M4 12h16"/></svg><small>D</small></button>
+        <button data-hint="Ellipse: click a face, then drag from the centre" aria-label="Ellipse tool"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="9" ry="5"/></svg><small>E</small></button>
+        <hr>
+        <button data-hint="Middle-drag pans anywhere; this tool pans with the left button" aria-label="Pan"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/></svg></button>
+      </div>
+      <div class="vp"><svg id="sa"></svg></div>
+      <aside class="inspector">
+        <div class="sec">
+          <h4>Vanishing points <span>9 slots</span></h4>
+          <div class="vps" id="vps"></div>
+          <div class="row" style="margin-top:10px"><span>Point 1 density</span><input type="range" min="0" max="8" value="0" id="dens"></div>
+          <div class="row"><span class="readout" id="densOut">Automatic</span><button style="all:unset;cursor:pointer;color:var(--hi)">Level 1 &amp; 2 <kbd>H</kbd></button></div>
+        </div>
+        <div class="sec">
+          <h4>Guides</h4>
+          <label class="tg row"><span>Grid <kbd>G</kbd></span><input type="checkbox" checked data-opt="grid"></label>
+          <label class="tg row"><span>Trace lines</span><input type="checkbox" checked data-opt="trace"></label>
+          <label class="tg row"><span>Cone of vision <kbd>V</kbd></span><input type="checkbox" data-opt="cone"></label>
+          <div class="row"><span>Grid style</span><select><option>Both</option><option>Vertical</option><option>Horizontal</option></select></div>
+        </div>
+        <div class="sec">
+          <h4>Camera</h4>
+          <div class="row"><span>FOV</span><span class="readout">60°</span></div>
+          <div class="row"><span>Station distance</span><span class="readout">360</span></div>
+          <div class="row"><span>Preset</span><select><option>2-Point</option><option>1-Point</option><option>3-Point</option><option>Rig: street corner</option></select></div>
+        </div>
+        <div class="sec">
+          <h4>Reference</h4>
+          <label class="tg row"><span>Show <kbd>I</kbd></span><input type="checkbox" data-opt="reference"></label>
+          <div class="row"><span>Opacity</span><input type="range" value="40"></div>
+        </div>
+        <div class="sec">
+          <h4>Palette <kbd>Ctrl+Shift+P</kbd></h4>
+          <div class="swatches" id="sw"></div>
+        </div>
+      </aside>
+      <div class="statusbar"><span class="hint" id="hint">Drag a point to move it · 1–9 drops a point at the cursor</span>
+        <span class="right"><span>Selected: VP 1</span><span>x 412 · y 268</span><span>Zoom 100%</span></span></div>
+    </div>
+    </div>
+  </div>
+  <p class="note">Live mock: click tools, toggle guides, switch palettes. The inspector replaces the F1 overlay,
+    the Reference settings dialog and the two HUD bars drawn by <code>Renderer.DrawHud</code>.</p>
+
+  <h2>What changes</h2>
+  <div class="grid2">
+    <div class="card"><h3>Added</h3><ul>
+      <li>Tool rail (Select, VP, Trace, Box, Subdivide, Ellipse, Pan) with shortcut badges.</li>
+      <li>Inspector: VP slots and density, guide toggles, camera readout, reference opacity, palette picker.</li>
+      <li>Status bar: contextual hint, selection, cursor in plane coordinates, zoom.</li></ul></div>
+    <div class="card"><h3>Removed / moved</h3><ul>
+      <li>Top and bottom HUD bars drawn inside the viewport.</li>
+      <li>Reference settings modal folds into the inspector.</li>
+      <li>F1 overlay stays, but is no longer the only way to learn the tools.</li></ul></div>
+    <div class="card"><h3>Build cost</h3><ul>
+      <li><code>MainWindow.axaml</code>: Grid with rail, viewport, inspector, status bar.</li>
+      <li>World needs change notification (or a <code>Changed</code> event) so panels stay in sync with key presses.</li>
+      <li>Medium effort; no geometry changes.</li></ul></div>
+    <div class="card"><h3>Risks</h3><ul>
+      <li>Panels take ~310 px from the viewport; needs a collapse toggle (<kbd>Tab</kbd>).</li>
+      <li>Selftest renders the viewport alone, so HUD checks move to a separate headless window test.</li></ul></div>
+  </div>
+</div>
+<script src="scene.js"></script>
+<script>
+  const state = { palette: 'atelier', grid: true, trace: true, cone: false, reference: false };
+  const svg = document.getElementById('sa');
+  function render() {
+    const c = drawScene(svg, state.palette, state);
+    document.getElementById('vps').innerHTML = c.vp.map((col, i) =>
+      `<i class="${i > 1 ? 'empty' : ''}${i === 0 ? ' sel' : ''}" style="background:${col}">${i + 1}</i>`).join('');
+  }
+  document.getElementById('sw').innerHTML = Object.entries(PALETTES).map(([n, p]) =>
+    `<button aria-pressed="${n === state.palette}" data-p="${n}"><b style="background:linear-gradient(90deg,${p.paper} 50%,${p.vp[0]} 50% 75%,${p.prompt} 75%)"></b>${n}</button>`).join('');
+  document.getElementById('sw').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    state.palette = b.dataset.p;
+    document.querySelectorAll('#sw button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    render();
+  };
+  document.querySelectorAll('[data-opt]').forEach(cb => cb.onchange = () => { state[cb.dataset.opt] = cb.checked; render(); });
+  document.getElementById('rail').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#rail button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    document.getElementById('hint').textContent = b.dataset.hint;
+  };
+  const dens = document.getElementById('dens');
+  dens.oninput = () => document.getElementById('densOut').textContent = dens.value === '0' ? 'Automatic' : 'Density ' + dens.value;
+  render();
+</script>
+</body>
+</html>

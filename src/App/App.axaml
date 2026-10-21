@@ -1,0 +1,13 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Chitin.App">
+  <Application.Resources>
+    <FontFamily x:Key="ContentControlThemeFontFamily">avares://Chitin/assets/fonts#B612 Mono</FontFamily>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="Window">
+      <Setter Property="FontFamily" Value="{StaticResource ContentControlThemeFontFamily}" />
+    </Style>
+  </Application.Styles>
+</Application>

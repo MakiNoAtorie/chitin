@@ -1,0 +1,140 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:Chitin"
+        x:Class="Chitin.MainWindow"
+        Title="Chitin"
+        Width="1084"
+        Height="812"
+        WindowStartupLocation="CenterScreen"
+        Icon="/assets/app.ico"
+        Background="{DynamicResource Paper}"
+        Foreground="{DynamicResource Ink}"
+        FontSize="12"
+        KeyDown="Window_KeyDown">
+  <!-- Brushes are replaced from the active palette (MainWindow.ApplyTheme). -->
+  <Window.Resources>
+    <SolidColorBrush x:Key="Ink" Color="#111111" />
+    <SolidColorBrush x:Key="Paper" Color="#F7F7F4" />
+    <SolidColorBrush x:Key="Hair" Color="#B7B7B5" />
+    <SolidColorBrush x:Key="Prompt" Color="#B07A2E" />
+  </Window.Resources>
+  <Window.Styles>
+    <Style Selector="TextBlock.caps">
+      <Setter Property="FontSize" Value="9" />
+      <Setter Property="LetterSpacing" Value="1.2" />
+    </Style>
+    <Style Selector="TextBlock.big">
+      <Setter Property="FontSize" Value="17" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="Border.cell">
+      <Setter Property="BorderBrush" Value="{DynamicResource Ink}" />
+      <Setter Property="Padding" Value="9,1" />
+    </Style>
+    <!-- Flat cells: no hover fill, no rounding; the state shows as inverted ink and paper. -->
+    <Style Selector="Button.cell">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Ink}" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
+            <ContentPresenter Content="{TemplateBinding Content}"
+                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalContentAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.cell.on">
+      <Setter Property="Background" Value="{DynamicResource Ink}" />
+      <Setter Property="Foreground" Value="{DynamicResource Paper}" />
+    </Style>
+  </Window.Styles>
+
+  <Border BorderBrush="{DynamicResource Ink}" BorderThickness="2">
+    <Grid x:Name="Frame" RowDefinitions="28,20,*,66" ColumnDefinitions="Auto,20,*,Auto">
+      <!-- Menu bar with Find; the menus are built from the command table (BuildMenu). -->
+      <Border Grid.ColumnSpan="4" BorderBrush="{DynamicResource Ink}" BorderThickness="0,0,0,1">
+        <DockPanel>
+          <Button x:Name="ModeButton" DockPanel.Dock="Right" Classes="cell" Width="128"
+                  BorderThickness="1,0,0,0" Padding="12,0"
+                  AutomationProperties.Name="Switch compact and detailed panels">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Classes="caps" Text="CTRL K" VerticalAlignment="Center" />
+              <TextBlock x:Name="ModeName" Text="Compact" FontWeight="Bold" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Border x:Name="FindCell" DockPanel.Dock="Right" BorderBrush="{DynamicResource Ink}"
+                  BorderThickness="1,0,0,0" Padding="10,0">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <TextBlock Classes="caps" Text="FIND" VerticalAlignment="Center" />
+              <TextBox x:Name="FindBox" Width="210" MinHeight="0" Padding="2,1"
+                       Watermark="command" AutomationProperties.Name="Find a command" />
+              <TextBlock Classes="caps" Text="CTRL F" VerticalAlignment="Center" />
+            </StackPanel>
+          </Border>
+          <Menu x:Name="MainMenu" Background="Transparent" Closed="Menu_Closed" />
+        </DockPanel>
+      </Border>
+      <Popup x:Name="FindPopup" PlacementTarget="{Binding #FindCell}" Placement="BottomEdgeAlignedRight"
+             IsLightDismissEnabled="False" ShouldUseOverlayLayer="True">
+        <Border Background="{DynamicResource Paper}" BorderBrush="{DynamicResource Ink}" BorderThickness="2"
+                Width="440">
+          <ScrollViewer x:Name="FindScroll" MaxHeight="360">
+            <StackPanel x:Name="FindList" />
+          </ScrollViewer>
+        </Border>
+      </Popup>
+
+      <!-- Tool tray: lettered cells. -->
+      <!-- Panel change: a linear 100 ms width change. -->
+      <Border x:Name="Tray" Grid.Row="1" Grid.RowSpan="2" Width="40" ClipToBounds="True"
+              BorderBrush="{DynamicResource Ink}" BorderThickness="0,0,1,0">
+        <Border.Transitions>
+          <Transitions>
+            <DoubleTransition Property="Width" Duration="0:0:0.1" />
+          </Transitions>
+        </Border.Transitions>
+        <StackPanel x:Name="TrayPanel" />
+      </Border>
+
+      <Border Grid.Row="1" Grid.Column="1" BorderBrush="{DynamicResource Ink}" BorderThickness="0,0,1,1">
+        <local:Hatch Stroke="{DynamicResource Hair}" />
+      </Border>
+      <local:Ruler x:Name="TopRuler" Grid.Row="1" Grid.Column="2" />
+      <local:Ruler x:Name="LeftRuler" Grid.Row="2" Grid.Column="1" Vertical="True" />
+      <local:ViewportControl x:Name="Viewport" Grid.Row="2" Grid.Column="2"
+                             ClipToBounds="True" AutomationProperties.Name="Drawing viewport" />
+
+      <!-- Inspector (detailed mode): ruled tables bound to the world. -->
+      <Border x:Name="Inspector" Grid.Row="1" Grid.RowSpan="3" Grid.Column="3" Width="0" ClipToBounds="True"
+              BorderBrush="{DynamicResource Ink}" BorderThickness="0">
+        <Border.Transitions>
+          <Transitions>
+            <DoubleTransition Property="Width" Duration="0:0:0.1" />
+          </Transitions>
+        </Border.Transitions>
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Inspector">
+          <StackPanel x:Name="InspectorPanel" Width="300" />
+        </ScrollViewer>
+      </Border>
+
+      <!-- Foot: numbered notes, then the title block. -->
+      <Border Grid.Row="3" Grid.ColumnSpan="3" BorderBrush="{DynamicResource Ink}" BorderThickness="0,2,0,0">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel x:Name="Notes" Margin="12,6" Spacing="3" VerticalAlignment="Center" ClipToBounds="True" />
+          <Border Grid.Column="1" BorderBrush="{DynamicResource Ink}" BorderThickness="2,0,0,0">
+            <Grid x:Name="TitleBlock" RowDefinitions="*,*" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto" />
+          </Border>
+        </Grid>
+      </Border>
+    </Grid>
+  </Border>
+</Window>
