@@ -54,12 +54,19 @@ internal abstract class ConstructionMode : MouseMode
         Renderer.DrawPrims(context, prims, RenderMode.Interactive);
     }
 
+    // The box and face of the last pick, or -1 for four clicked corners.
+    protected int PickedBox = -1;
+    protected int PickedFace;
+
     // The first click on a box face picks that face; otherwise four clicks give the corners.
     protected Vec2[]? PickQuad(Vec2 world)
     {
-        if (Corners.Count == 0 && BoxGeometry.HitFace(World.Boxes, world) is { } face)
+        PickedBox = -1;
+        if (Corners.Count == 0 && BoxGeometry.HitFace(World.Boxes, world, World.VanishingPoints) is { } hit)
         {
-            return face;
+            PickedBox = hit.Box;
+            PickedFace = hit.Face;
+            return hit.Quad;
         }
 
         Corners.Add(world);
@@ -104,6 +111,9 @@ internal abstract class ConstructionMode : MouseMode
     }
 }
 
+// Three drags: width, depth, height. Width and depth lie on the rays from the first corner to
+// their vanishing points; the height runs toward point 3, or straight up without it. The box
+// keeps those links, so it follows the points when they move.
 internal sealed class BoxTool : ConstructionMode
 {
     private int _stage;
@@ -122,21 +132,13 @@ internal sealed class BoxTool : ConstructionMode
     public override void Begin(Point screen, Vec2 world, KeyModifiers modifiers)
     {
         base.Begin(screen, world, modifiers);
-        if (_stage == 0)
+        if (_stage <= 1)
         {
             _p0 = world;
             _stage = 1;
-            _forced = -1;
         }
-        else if (_stage == 1)
-        {
-            _p0 = world;
-            _forced = -1;
-        }
-        else if (_stage == 2)
-        {
-            _forced = -1;
-        }
+
+        _forced = -1;
     }
 
     public override void MouseUp()
@@ -151,8 +153,8 @@ internal sealed class BoxTool : ConstructionMode
                 return;
             }
 
-            _p1 = CurrentWorld;
-            _axis = _forced >= 0 ? _forced : ChooseAxis();
+            _axis = FirstAxis();
+            _p1 = OnAxis(_axis, CurrentWorld);
             _stage = 2;
         }
         else if (_stage == 2)
@@ -162,7 +164,7 @@ internal sealed class BoxTool : ConstructionMode
                 return;
             }
 
-            _p2 = CurrentWorld;
+            _p2 = OnAxis(1 - _axis, CurrentWorld);
             _stage = 3;
         }
         else if (_stage == 3)
@@ -173,17 +175,8 @@ internal sealed class BoxTool : ConstructionMode
                 return;
             }
 
-            BuiltBox built = BoxGeometry.Build(_p0, _p1, _p2, h,
-                AxisDirection(1 - _axis, _p1), AxisDirection(_axis, _p2));
             PushUndo();
-            World.AddBox(new BoxState
-            {
-                P0 = _p0,
-                P1 = _p1,
-                P2 = _p2,
-                P3 = built.Vertices[2],
-                H = h
-            });
+            World.AddBox(Pending(_p2, h));
             _stage = 0;
         }
     }
@@ -222,79 +215,98 @@ internal sealed class BoxTool : ConstructionMode
     public override void DrawOver(DrawingContext context)
     {
         Rect plane = GuideBuilder.PlaneRect(World);
+        var prims = new List<Prim>();
         switch (_stage)
         {
-            case 1:
-                context.DrawLine(World.Styles.ConstructionPreviewPen, ToPoint(_p0), ToPoint(CurrentWorld));
+            case 1 when Dragging:
+                prims.Add(Prim.Line(World.Styles.ConstructionPreviewPen, _p0, OnAxis(FirstAxis(), CurrentWorld),
+                    plane));
                 break;
 
             case 2:
+            case 3 when !Dragging:
             {
-                context.DrawLine(World.Styles.ConstructionPreviewPen, ToPoint(_p0), ToPoint(_p1));
-                context.DrawLine(World.Styles.ConstructionPreviewPen, ToPoint(_p0), ToPoint(CurrentWorld));
-                Vec2 p3 = BoxGeometry.FourthCorner(_p0, _p1, CurrentWorld,
-                    AxisDirection(1 - _axis, _p1), AxisDirection(_axis, CurrentWorld));
-                context.DrawLine(World.Styles.ConstructionPreviewPen, ToPoint(_p1), ToPoint(p3));
-                context.DrawLine(World.Styles.ConstructionPreviewPen, ToPoint(CurrentWorld), ToPoint(p3));
+                Vec2 p2 = _stage == 2 ? OnAxis(1 - _axis, CurrentWorld) : _p2;
+                (Vec2[] bottom, _) = BoxGeometry.Corners(Pending(p2, new Vec2()), World.VanishingPoints);
+                prims.Add(Prim.Poly(World.Styles.ConstructionPreviewPen, null, bottom, true, plane));
                 break;
             }
 
             case 3:
-            {
-                if (!Dragging)
-                {
-                    Vec2 p3 = BoxGeometry.FourthCorner(_p0, _p1, _p2,
-                        AxisDirection(1 - _axis, _p1), AxisDirection(_axis, _p2));
-                    var baseEdges = new List<Prim>
-                    {
-                        Prim.Line(World.Styles.ConstructionPreviewPen, _p0, _p1, plane),
-                        Prim.Line(World.Styles.ConstructionPreviewPen, _p1, p3, plane),
-                        Prim.Line(World.Styles.ConstructionPreviewPen, p3, _p2, plane),
-                        Prim.Line(World.Styles.ConstructionPreviewPen, _p2, _p0, plane)
-                    };
-                    Draw(baseEdges, context);
-                    break;
-                }
-
-                Vec2 h = Height();
-                BuiltBox built = BoxGeometry.Build(_p0, _p1, _p2, h,
-                    AxisDirection(1 - _axis, _p1), AxisDirection(_axis, _p2));
-                var prims = new List<Prim>();
-                GuideBuilder.AddBox(prims, World, World.Styles, new BoxState
-                {
-                    P0 = _p0,
-                    P1 = _p1,
-                    P2 = _p2,
-                    P3 = built.Vertices[2],
-                    H = h
-                }, plane);
-                Draw(prims, context);
+                GuideBuilder.AddBox(prims, World, World.Styles, Pending(_p2, Height()), plane);
                 break;
-            }
         }
+
+        Draw(prims, context);
     }
 
-    private int ChooseAxis()
+    // The box as it stands, with its links to the points that exist now.
+    private BoxState Pending(Vec2 p2, Vec2 h)
     {
-        Vec2 drag = (_p1 - _p0).Normalized();
+        int a = _axis;
+        int b = 1 - _axis;
+        Vec2 p3 = BoxGeometry.FourthCorner(_p0, _p1, p2, AxisDirection(b, _p1), AxisDirection(a, p2));
+        Vec2? up = PointFor(2);
+        return new BoxState
+        {
+            P0 = _p0,
+            P1 = _p1,
+            P2 = p2,
+            P3 = p3,
+            H = h,
+            Follow = new[] { PointFor(a) != null ? a : -1, PointFor(b) != null ? b : -1, up != null ? 2 : -1 },
+            Lengths = new[]
+            {
+                Vec2.Dot(_p1 - _p0, AxisDirection(a, _p0)),
+                Vec2.Dot(p2 - _p0, AxisDirection(b, _p0)),
+                up is { } top ? Vec2.Dot(h, (top - _p0).Normalized()) : 0
+            }
+        };
+    }
+
+    private int FirstAxis()
+    {
+        if (_forced >= 0)
+        {
+            return _forced;
+        }
+
+        Vec2 drag = (CurrentWorld - _p0).Normalized();
         double first = Math.Abs(Vec2.Dot(drag, AxisDirection(0, _p0)));
         double second = Math.Abs(Vec2.Dot(drag, AxisDirection(1, _p0)));
         return first >= second ? 0 : 1;
     }
 
+    // The pointer projected onto the ray from p0 toward the axis point; free without that point.
+    private Vec2 OnAxis(int axis, Vec2 pointer)
+    {
+        if (PointFor(axis) is null)
+        {
+            return pointer;
+        }
+
+        Vec2 direction = AxisDirection(axis, _p0);
+        return _p0 + direction * Vec2.Dot(pointer - _p0, direction);
+    }
+
     private Vec2 Height()
     {
         Vec2 drag = CurrentWorld - _p0;
-        if (World.VanishingPoints[2] is { } point && point.Pos.DistFrom(_p0) > 1e-9)
+        if (PointFor(2) is { } point)
         {
-            Vec2 direction = (point.Pos - _p0).Normalized();
-            double length = Vec2.Dot(drag, direction);
-            return direction * length;
+            Vec2 direction = (point - _p0).Normalized();
+            return direction * Vec2.Dot(drag, direction);
         }
 
-        return drag;
+        return new Vec2(0, drag.Y);
     }
 
+    private Vec2? PointFor(int index)
+    {
+        return World.VanishingPoints[index] is { } point && point.Pos.DistFrom(_p0) > 1e-9 ? point.Pos : null;
+    }
+
+    // Toward the axis point; without it, horizontal (with one point that is 1-point perspective).
     private Vec2 AxisDirection(int index, Vec2 origin)
     {
         if (World.VanishingPoints[index] is { } point && point.Pos.DistFrom(origin) > 1e-9)
@@ -302,9 +314,8 @@ internal sealed class BoxTool : ConstructionMode
             return (point.Pos - origin).Normalized();
         }
 
-        return index == 0 ? new Vec2(1, 0) : new Vec2(0, 1);
+        return index == 0 || World.VanishingPoints[0] != null ? new Vec2(1, 0) : new Vec2(0, 1);
     }
-
 }
 
 internal sealed class EllipseTool : ConstructionMode
@@ -314,6 +325,8 @@ internal sealed class EllipseTool : ConstructionMode
     private Vec2 _centre;
     private double _radius;
     private bool _radiusDrag;
+    private int _box = -1;
+    private int _face;
 
     public EllipseTool(World world, Action pushUndo) : base(world, pushUndo)
     {
@@ -369,7 +382,9 @@ internal sealed class EllipseTool : ConstructionMode
                 Quad = _quad,
                 Cx = _centre.X,
                 Cy = _centre.Y,
-                R = _radius
+                R = _radius,
+                Box = _box,
+                Face = _face
             });
             _quad = null;
             Corners.Clear();
@@ -439,6 +454,8 @@ internal sealed class EllipseTool : ConstructionMode
 
         _quad = quad;
         _homography = homography;
+        _box = PickedBox;
+        _face = PickedFace;
     }
 
 }
@@ -472,7 +489,7 @@ internal sealed class SubdivisionTool : ConstructionMode
         }
 
         PushUndo();
-        _last = new SubdivisionState { Quad = quad, N = _n, M = _m, Edge = false };
+        _last = new SubdivisionState { Quad = quad, N = _n, M = _m, Edge = false, Box = PickedBox, Face = PickedFace };
         World.AddSubdivision(_last);
     }
 

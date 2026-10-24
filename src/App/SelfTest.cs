@@ -483,6 +483,7 @@ internal static class SelfTest
             Check("pointer_navigation", PointerNavigation());
             Check("click_places_points", ClickPlacesPoints());
             Check("view_state_outside_undo", ViewStateOutsideUndo());
+            Check("boxes_follow_points", BoxesFollowPoints());
             Check("menu_gestures", MenuGesturesBound());
             Check("window_keys_once", WindowKeysRunOnce());
             Check("menu_state", MenuState());
@@ -1159,6 +1160,82 @@ internal static class SelfTest
             bool traced = world.TraceLines.Count == 1 && world.VanishingPoints[3] == null;
             viewport.ProcessKey(new KeyEventArgs { Key = Key.Escape });
             return two && selected && onlyUnselected && third && traceTool && traced && viewport.Tool == null;
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    // A box built with the tool lies on its point rays and follows the points when they move, and
+    // so does a subdivision on its face; the links survive a save, and removing the box detaches it.
+    private static bool BoxesFollowPoints()
+    {
+        var viewport = new ViewportControl();
+        var window = new Window { Width = 900, Height = 700, Content = viewport };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            World world = viewport.World;
+            world.VanishingPoints[0] = new VanishingPoint(new Vec2(-400, 0), 0);
+            world.VanishingPoints[1] = new VanishingPoint(new Vec2(400, 0), 0);
+            world.VanishingPoints[2] = new VanishingPoint(new Vec2(0, -900), 0);
+            world.AddBox(StackedBox(0));
+            world.Boxes[0].P0 = new Vec2(-250, 200);
+            Vec2 legacyCorner = BoxGeometry.Build(world.Boxes[0]).Vertices[1];
+            Point Screen(Vec2 p) => new((p.X + world.Camera.X) * world.Zoom, (p.Y + world.Camera.Y) * world.Zoom);
+            void Drag(Vec2 from, Vec2 to)
+            {
+                window.MouseDown(Screen(from), MouseButton.Left);
+                window.MouseMove(Screen(to));
+                window.MouseUp(Screen(to), MouseButton.Left);
+            }
+
+            static bool OnLine(Vec2 a, Vec2 b, Vec2 c) =>
+                Math.Abs((b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X)) <= 1e-6 * a.DistFrom(b) * a.DistFrom(c) + 1e-6;
+
+            var p0 = new Vec2(0, 150);
+            viewport.ProcessKey(new KeyEventArgs { Key = Key.B });
+            Drag(p0, new Vec2(-100, 120));
+            Drag(p0, new Vec2(100, 135));
+            Drag(p0, new Vec2(5, 60));
+            BoxState box = world.Boxes[1];
+            BuiltBox built = BoxGeometry.Build(box, world.VanishingPoints);
+            // Vertices: p0 p1 p3 p2 q0 q1 q3 q2.
+            bool onRays = box.Follow!.SequenceEqual(new[] { 0, 1, 2 }) &&
+                OnLine(p0, built.Vertices[1], new Vec2(-400, 0)) && OnLine(p0, built.Vertices[3], new Vec2(400, 0)) &&
+                OnLine(built.Vertices[1], built.Vertices[2], new Vec2(400, 0)) &&
+                OnLine(built.Vertices[1], built.Vertices[5], new Vec2(0, -900)) &&
+                OnLine(built.Vertices[4], built.Vertices[5], new Vec2(-400, 0));
+
+            viewport.ProcessKey(new KeyEventArgs { Key = Key.D });
+            window.MouseDown(Screen(Average(built.Faces[2])), MouseButton.Left);
+            window.MouseUp(Screen(Average(built.Faces[2])), MouseButton.Left);
+            bool linked = world.Subdivisions.Count == 1 && world.Subdivisions[0].Box == 1;
+            int face = world.Subdivisions[0].Face;
+
+            double width = built.Vertices[1].DistFrom(p0);
+            world.VanishingPoints[0]!.Pos = new Vec2(-700, -40);
+            world.BumpRevision();
+            BuiltBox moved = BoxGeometry.Build(box, world.VanishingPoints);
+            bool follows = Math.Abs(moved.Vertices[1].DistFrom(p0) - width) < 1e-6 &&
+                OnLine(p0, moved.Vertices[1], new Vec2(-700, -40)) &&
+                OnLine(moved.Vertices[3], moved.Vertices[2], new Vec2(-700, -40)) &&
+                BoxGeometry.FaceQuad(world, 1, face)!.SequenceEqual(moved.Faces[face]) &&
+                BoxGeometry.Build(world.Boxes[0], world.VanishingPoints).Vertices[1] == legacyCorner;
+
+            var reloaded = new World();
+            reloaded.Restore(ProjectFile.Read(ProjectFile.Write(world)));
+            bool saved = reloaded.Boxes[1].Follow!.SequenceEqual(box.Follow!) && reloaded.Subdivisions[0].Box == 1 &&
+                BoxGeometry.Build(reloaded.Boxes[1], reloaded.VanishingPoints).Vertices
+                    .Zip(moved.Vertices).All(pair => pair.First.DistFrom(pair.Second) < 1e-9);
+
+            viewport.ProcessKey(new KeyEventArgs { Key = Key.B });
+            viewport.ProcessKey(new KeyEventArgs { Key = Key.Back });
+            bool detached = world.Boxes.Count == 1 && world.Subdivisions[0].Box == -1 &&
+                world.Subdivisions[0].Quad.SequenceEqual(moved.Faces[face]);
+            return onRays && linked && follows && saved && detached;
         }
         finally
         {

@@ -244,7 +244,7 @@ public static class GuideBuilder
 
     internal static void AddBox(List<Prim> prims, World world, Styles styles, BoxState box, Rect plane)
     {
-        BuiltBox built = BoxGeometry.Build(box);
+        BuiltBox built = BoxGeometry.Build(box, world.VanishingPoints);
         foreach (int index in built.VisibleFaces)
         {
             prims.Add(Prim.Poly(null, styles.BoxFaceBrush, built.Faces[index], true, plane));
@@ -271,8 +271,8 @@ public static class GuideBuilder
 
         if (!subdivision.Edge)
         {
-            foreach ((Vec2 a, Vec2 b) in SubdivisionGeometry.BuildLines(subdivision.Quad,
-                subdivision.N, subdivision.M))
+            Vec2[] quad = BoxGeometry.FaceQuad(world, subdivision.Box, subdivision.Face) ?? subdivision.Quad;
+            foreach ((Vec2 a, Vec2 b) in SubdivisionGeometry.BuildLines(quad, subdivision.N, subdivision.M))
             {
                 prims.Add(Prim.Line(pen, a, b, plane));
             }
@@ -306,7 +306,8 @@ public static class GuideBuilder
             return;
         }
 
-        Vec2[] points = EllipseGeometry.Sample(ellipse.Quad, ellipse.Cx, ellipse.Cy, ellipse.R);
+        Vec2[] quad = BoxGeometry.FaceQuad(world, ellipse.Box, ellipse.Face) ?? ellipse.Quad;
+        Vec2[] points = EllipseGeometry.Sample(quad, ellipse.Cx, ellipse.Cy, ellipse.R);
         if (points.Length > 1)
         {
             prims.Add(Prim.Poly(pen, null, points, true, plane));

@@ -82,9 +82,22 @@ public sealed class BoxState
     [JsonPropertyName("h")]
     public Vec2 H { get; set; }
 
+    // The point each edge aims at (width, depth, height; -1 none) and the signed edge lengths from
+    // p0 toward it. Null: an older box, drawn as stored.
+    [JsonPropertyName("follow")]
+    public int[]? Follow { get; set; }
+
+    [JsonPropertyName("lengths")]
+    public double[]? Lengths { get; set; }
+
     public BoxState Clone()
     {
-        return new BoxState { P0 = P0, P1 = P1, P2 = P2, P3 = P3, H = H };
+        return new BoxState
+        {
+            P0 = P0, P1 = P1, P2 = P2, P3 = P3, H = H,
+            Follow = (int[]?)Follow?.Clone(),
+            Lengths = (double[]?)Lengths?.Clone()
+        };
     }
 }
 
@@ -102,6 +115,13 @@ public sealed class SubdivisionState
     [JsonPropertyName("edge")]
     public bool Edge { get; set; }
 
+    // The box face it was picked from, so it follows the box; -1: the stored quad.
+    [JsonPropertyName("box")]
+    public int Box { get; set; } = -1;
+
+    [JsonPropertyName("face")]
+    public int Face { get; set; }
+
     public SubdivisionState Clone()
     {
         return new SubdivisionState
@@ -109,7 +129,9 @@ public sealed class SubdivisionState
             Quad = Quad == null ? Array.Empty<Vec2>() : Copy(Quad),
             N = N,
             M = M,
-            Edge = Edge
+            Edge = Edge,
+            Box = Box,
+            Face = Face
         };
     }
 
@@ -135,6 +157,12 @@ public sealed class EllipseState
     [JsonPropertyName("r")]
     public double R { get; set; }
 
+    [JsonPropertyName("box")]
+    public int Box { get; set; } = -1;
+
+    [JsonPropertyName("face")]
+    public int Face { get; set; }
+
     public EllipseState Clone()
     {
         return new EllipseState
@@ -142,7 +170,9 @@ public sealed class EllipseState
             Quad = Quad == null ? Array.Empty<Vec2>() : SubdivisionState.Copy(Quad),
             Cx = Cx,
             Cy = Cy,
-            R = R
+            R = R,
+            Box = Box,
+            Face = Face
         };
     }
 }

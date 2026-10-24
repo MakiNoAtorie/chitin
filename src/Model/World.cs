@@ -198,7 +198,16 @@ public class World
                 continue;
             }
 
-            Boxes.Add(box.Clone());
+            // A bad link makes it an ordinary box, drawn as stored.
+            BoxState copy = box.Clone();
+            if (copy.Follow is { } follow && (follow.Length != 3 || follow.Any(index => index is < -1 or > 8) ||
+                copy.Lengths is not { Length: 3 } lengths || !lengths.All(double.IsFinite)))
+            {
+                copy.Follow = null;
+                copy.Lengths = null;
+            }
+
+            Boxes.Add(copy);
         }
 
         Subdivisions = new List<SubdivisionState>();
@@ -213,6 +222,7 @@ public class World
             SubdivisionState copy = subdivision.Clone();
             copy.N = Math.Clamp(copy.N, 1, 64);
             copy.M = Math.Clamp(copy.M, 1, 64);
+            copy.Box = ValidFace(copy.Box, copy.Face) && !copy.Edge ? copy.Box : -1;
             Subdivisions.Add(copy);
         }
 
@@ -226,7 +236,9 @@ public class World
                 continue;
             }
 
-            Ellipses.Add(ellipse.Clone());
+            EllipseState ellipseCopy = ellipse.Clone();
+            ellipseCopy.Box = ValidFace(ellipseCopy.Box, ellipseCopy.Face) ? ellipseCopy.Box : -1;
+            Ellipses.Add(ellipseCopy);
         }
 
         RestoreView(state);
@@ -442,9 +454,28 @@ public class World
             return false;
         }
 
-        Boxes.RemoveAt(Boxes.Count - 1);
+        // Shapes on its faces keep where they are now and stop following.
+        int last = Boxes.Count - 1;
+        foreach (SubdivisionState subdivision in Subdivisions.Where(item => item.Box == last))
+        {
+            subdivision.Quad = BoxGeometry.FaceQuad(this, last, subdivision.Face)!;
+            subdivision.Box = -1;
+        }
+
+        foreach (EllipseState ellipse in Ellipses.Where(item => item.Box == last))
+        {
+            ellipse.Quad = BoxGeometry.FaceQuad(this, last, ellipse.Face)!;
+            ellipse.Box = -1;
+        }
+
+        Boxes.RemoveAt(last);
         BumpRevision();
         return true;
+    }
+
+    private bool ValidFace(int box, int face)
+    {
+        return box >= 0 && box < Boxes.Count && face is >= 0 and < 6;
     }
 
     public void AddSubdivision(SubdivisionState subdivision)
