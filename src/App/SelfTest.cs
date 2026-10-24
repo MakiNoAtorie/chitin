@@ -1144,6 +1144,8 @@ internal static class SelfTest
             bool zoomedIn = Math.Abs(world.Zoom - start * 1.25) < 1e-9 && At(centre).DistFrom(middle) < 1e-6;
             Key(Avalonia.Input.Key.OemMinus);
             bool zoomedOut = Math.Abs(world.Zoom - start) < 1e-9;
+            // From an awkward zoom, Ctrl+0 must land on exactly 1.
+            viewport.ZoomAt(centre, 0.6487212707001282);
             Key(Avalonia.Input.Key.D0);
             bool actual = world.Zoom == 1;
 

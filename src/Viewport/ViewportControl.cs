@@ -316,9 +316,9 @@ public class ViewportControl : Control
     private const double ZoomStep = 1.25;
 
     // About the viewport centre, like the zoom keys and buttons of most drawing apps.
-    private void ZoomBy(double factor)
+    private void ZoomAtCentre(double zoom)
     {
-        ZoomAt(new Point(Bounds.Width / 2, Bounds.Height / 2), World.Zoom * factor);
+        ZoomAt(new Point(Bounds.Width / 2, Bounds.Height / 2), zoom);
     }
 
     // Zoom is view state: no undo. The world point under the anchor stays put.
@@ -428,10 +428,10 @@ public class ViewportControl : Control
         On("Centre view", new[] { K(Key.Home) }, CenterCamera);
         // Ctrl + "=" (or "+", which needs Shift on many layouts) and Ctrl + "-": no wheel needed.
         On("Zoom in", new[] { K(Key.OemPlus, ctrl), K(Key.OemPlus, ctrl | shift), K(Key.Add, ctrl) },
-            () => ZoomBy(ZoomStep), "Ctrl+=");
+            () => ZoomAtCentre(World.Zoom * ZoomStep), "Ctrl+=");
         On("Zoom out", new[] { K(Key.OemMinus, ctrl), K(Key.OemMinus, ctrl | shift), K(Key.Subtract, ctrl) },
-            () => ZoomBy(1 / ZoomStep), "Ctrl+-");
-        On("Actual size", new[] { K(Key.D0, ctrl), K(Key.NumPad0, ctrl) }, () => ZoomBy(1 / World.Zoom), "Ctrl+0");
+            () => ZoomAtCentre(World.Zoom / ZoomStep), "Ctrl+-");
+        On("Actual size", new[] { K(Key.D0, ctrl), K(Key.NumPad0, ctrl) }, () => ZoomAtCentre(1), "Ctrl+0");
 
         Group("Tools");
         On("Leave tool / unselect", new[] { K(Key.Escape) }, Escape);
