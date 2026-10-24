@@ -505,6 +505,7 @@ internal static class SelfTest
             Check("open_clears_history", OpenClearsHistory());
             Check("confirm_discard", ConfirmBeforeDiscard());
             Check("pointer_undo", PointerUndo());
+            Check("pointer_navigation", PointerNavigation());
             Check("menu_gestures", MenuGesturesBound());
             Check("window_keys_once", WindowKeysRunOnce());
             Check("menu_state", MenuState());
@@ -1096,12 +1097,13 @@ internal static class SelfTest
             window.MouseDown(Screen(0, 0), MouseButton.Middle);
             window.MouseMove(new Point(Screen(0, 0).X + 40, Screen(0, 0).Y + 30));
             window.MouseUp(Screen(0, 0), MouseButton.Middle);
-            Vec2 pannedCamera = world.Camera;
             bool panSilent = !viewport.History.CanUndo;
 
+            // A sideways swipe pans, it does not zoom.
             double zoom = world.Zoom;
             window.MouseWheel(Screen(0, 0), new Vector(1, 0));
-            bool sidewaysSilent = world.Zoom == zoom;
+            bool sidewaysSilent = world.Zoom == zoom && !viewport.History.CanUndo;
+            Vec2 pannedCamera = world.Camera;
 
             point = Screen(100, 100);
             window.MouseDown(point, MouseButton.Left);
@@ -1112,6 +1114,50 @@ internal static class SelfTest
             bool undone = VpAt(world, 0, 100, 100) &&
                 world.Camera.X == pannedCamera.X && world.Camera.Y == pannedCamera.Y;
             return clicksSilent && panSilent && sidewaysSilent && dragged && undone;
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    // Wheel pans, Ctrl + wheel zooms, Space + drag pans; the nearest of two overlapping points wins.
+    private static bool PointerNavigation()
+    {
+        var viewport = new ViewportControl();
+        var window = new Window { Width = 800, Height = 600, Content = viewport };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            World world = viewport.World;
+            world.VanishingPoints[0] = new VanishingPoint(new Vec2(0, 0), 0);
+            world.VanishingPoints[1] = new VanishingPoint(new Vec2(6, 0), 0);
+            Point Screen(double x, double y) =>
+                new((x + world.Camera.X) * world.Zoom, (y + world.Camera.Y) * world.Zoom);
+
+            window.MouseMove(Screen(6, 0));
+            bool hovered = world.HoverIdx == 1;
+            window.MouseDown(Screen(6, 0), MouseButton.Left);
+            window.MouseUp(Screen(6, 0), MouseButton.Left);
+            bool nearest = world.SelectionIdx == 1;
+
+            double zoom = world.Zoom;
+            Vec2 camera = world.Camera;
+            window.MouseWheel(Screen(0, 0), new Vector(0, -1));
+            bool wheelPans = world.Zoom == zoom && world.Camera.X == camera.X && world.Camera.Y < camera.Y;
+            window.MouseWheel(Screen(0, 0), new Vector(0, 1), RawInputModifiers.Control);
+            bool ctrlZooms = Math.Abs(world.Zoom - zoom * 1.1) < 1e-9;
+
+            camera = world.Camera;
+            Point start = Screen(6, 0);
+            window.KeyPress(Key.Space, RawInputModifiers.None, PhysicalKey.Space, " ");
+            window.MouseDown(start, MouseButton.Left);
+            window.MouseMove(new Point(start.X + 30, start.Y + 10));
+            window.MouseUp(new Point(start.X + 30, start.Y + 10), MouseButton.Left);
+            window.KeyRelease(Key.Space, RawInputModifiers.None, PhysicalKey.Space, " ");
+            bool spacePans = world.Camera.X > camera.X && VpAt(world, 1, 6, 0) && !viewport.History.CanUndo;
+            return hovered && nearest && wheelPans && ctrlZooms && spacePans;
         }
         finally
         {

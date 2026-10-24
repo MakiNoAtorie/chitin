@@ -58,6 +58,27 @@ public class World
     public Vec2[] UnitVectors = new Vec2[360];
     public int SelectionIdx = -1;
 
+    // The point under the pointer (view state): drawn with a ring.
+    public int HoverIdx = -1;
+
+    // The nearest point within radius of a world position, or -1. Nearest, not first: overlapping
+    // points can each be grabbed.
+    public int PointAt(Vec2 position, double radius)
+    {
+        int best = -1;
+        double bestDistance = radius;
+        for (int i = 0; i < VanishingPoints.Length; i++)
+        {
+            if (VanishingPoints[i] is { } point && point.Pos.DistFrom(position) < bestDistance)
+            {
+                best = i;
+                bestDistance = point.Pos.DistFrom(position);
+            }
+        }
+
+        return best;
+    }
+
     public int Revision { get; private set; }
     public string? StatusMessage { get; private set; }
 

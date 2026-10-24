@@ -17,6 +17,7 @@ public class ViewportControl : Control
     public World World { get; } = new();
 
     private bool _centered;
+    private bool _spaceHeld;
     private Vec2 _mouseWorld = new();
     private Bitmap? _clipboardBitmap;
     private IStorageFile? _projectFile;
@@ -101,7 +102,13 @@ public class ViewportControl : Control
         PointerUpdateKind kind = e.GetCurrentPoint(this).Properties.PointerUpdateKind;
         MouseMode? mode = null;
 
-        if (kind == PointerUpdateKind.LeftButtonPressed && _construction != null)
+        // Space + left drag pans, as in most drawing apps, in every tool.
+        if (kind == PointerUpdateKind.MiddleButtonPressed ||
+            (kind == PointerUpdateKind.LeftButtonPressed && _spaceHeld))
+        {
+            mode = new CameraMode(World);
+        }
+        else if (kind == PointerUpdateKind.LeftButtonPressed && _construction != null)
         {
             _construction.Begin(position, _mouseWorld, e.KeyModifiers);
             World.Overlay = _construction;
@@ -110,25 +117,11 @@ public class ViewportControl : Control
             return;
         }
 
-        if (kind == PointerUpdateKind.LeftButtonPressed)
+        else if (kind == PointerUpdateKind.LeftButtonPressed)
         {
-            World.SelectionIdx = -1;
-            for (int i = 0; i < 9; i++)
-            {
-                if (World.VanishingPoints[i] is { } point &&
-                    point.Pos.DistFrom(_mouseWorld) < 32.0 / World.Zoom)
-                {
-                    World.SelectionIdx = i;
-                    break;
-                }
-            }
-
+            World.SelectionIdx = World.PointAt(_mouseWorld, GrabRadius / World.Zoom);
             World.BumpRevision(false);
             mode = new VanishingPointMode(World, () => PushUndo("Move vanishing point"));
-        }
-        else if (kind == PointerUpdateKind.MiddleButtonPressed)
-        {
-            mode = new CameraMode(World);
         }
         else if (kind == PointerUpdateKind.RightButtonPressed)
         {
@@ -152,18 +145,45 @@ public class ViewportControl : Control
         _mouseWorld = ToWorld(position);
         PointerPosition = position;
         ViewChanged?.Invoke();
-        // Only an overlay draws anything that follows the pointer.
+        // Only an overlay or a change of hovered point redraws on a pointer move.
         if (World.Overlay != null)
         {
             World.Overlay.MouseMoved(position, _mouseWorld, e.KeyModifiers);
             InvalidateVisual();
         }
+
+        UpdateHover();
+    }
+
+    // Grab radius of a vanishing point, in screen pixels.
+    private const double GrabRadius = 32;
+
+    // The hovered point gets a ring and a hand cursor. During a point drag the ring stays on it.
+    private void UpdateHover()
+    {
+        int hover = World.Overlay is VanishingPointMode ? World.SelectionIdx
+            : World.Overlay != null || _spaceHeld ? -1
+            : World.PointAt(_mouseWorld, GrabRadius / World.Zoom);
+        if (hover != World.HoverIdx)
+        {
+            World.HoverIdx = hover;
+            InvalidateVisual();
+        }
+
+        Cursor = new Cursor(_spaceHeld || World.Overlay is CameraMode ? StandardCursorType.SizeAll
+            : hover >= 0 ? StandardCursorType.Hand : StandardCursorType.Cross);
     }
 
     protected override void OnPointerExited(PointerEventArgs e)
     {
         base.OnPointerExited(e);
         PointerPosition = null;
+        if (World.HoverIdx >= 0)
+        {
+            World.HoverIdx = -1;
+            InvalidateVisual();
+        }
+
         ViewChanged?.Invoke();
     }
 
@@ -184,21 +204,60 @@ public class ViewportControl : Control
         World.Overlay?.MouseUp();
         World.Overlay = _construction;
         e.Pointer.Capture(null);
+        UpdateHover();
         InvalidateVisual();
     }
 
+    // Wheel and two-finger scroll pan; Ctrl + wheel (a trackpad pinch too) zooms about the cursor.
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
-        if (e.Delta.Y == 0)
+        Point position = e.GetPosition(this);
+        Vector delta = e.Delta;
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0)
         {
-            return;
+            if (delta.Y == 0)
+            {
+                return;
+            }
+
+            ZoomAt(position, World.Zoom * Math.Pow(1.1, delta.Y));
+        }
+        else
+        {
+            // A mouse with only a vertical wheel scrolls sideways with Shift.
+            if ((e.KeyModifiers & KeyModifiers.Shift) != 0 && delta.X == 0)
+            {
+                delta = new Vector(delta.Y, 0);
+            }
+
+            if (delta == default)
+            {
+                return;
+            }
+
+            World.Camera = new Vec2(World.Camera.X + delta.X * WheelStep / World.Zoom,
+                World.Camera.Y + delta.Y * WheelStep / World.Zoom);
+            InvalidateVisual();
         }
 
-        Point position = e.GetPosition(this);
-        ZoomAt(position, World.Zoom * (e.Delta.Y > 0 ? 1.1 : 1 / 1.1));
         _mouseWorld = ToWorld(position);
+        UpdateHover();
         e.Handled = true;
+    }
+
+    // Screen pixels per wheel notch when the wheel pans.
+    private const double WheelStep = 48;
+
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        base.OnKeyUp(e);
+        if (e.Key == Key.Space)
+        {
+            _spaceHeld = false;
+            UpdateHover();
+            e.Handled = true;
+        }
     }
 
     // Zoom is view state: no undo. The world point under the anchor stays put.
@@ -406,6 +465,14 @@ public class ViewportControl : Control
     {
         try
         {
+            if (e.Key == Key.Space)
+            {
+                _spaceHeld = true;
+                UpdateHover();
+                e.Handled = true;
+                return;
+            }
+
             bool toolKey = _construction?.HandleKey(e.Key, e.KeyModifiers) == true;
             (Command Command, int Index) entry = default;
             if (!toolKey && !_keys.TryGetValue((e.Key, e.KeyModifiers), out entry))

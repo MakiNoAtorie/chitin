@@ -63,6 +63,12 @@ public static class Renderer
 
             if (interactive)
             {
+                if (world.HoverIdx >= 0 && world.VanishingPoints[world.HoverIdx] is { } hovered)
+                {
+                    context.DrawEllipse(null, styles.HoverPen, new Point(hovered.Pos.X, hovered.Pos.Y),
+                        20 / styles.Zoom, 20 / styles.Zoom);
+                }
+
                 world.Overlay?.DrawOver(context);
             }
         }

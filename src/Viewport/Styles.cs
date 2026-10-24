@@ -37,6 +37,7 @@ public sealed class Styles
     public readonly IPen StationPen;
     public readonly IBrush StationFill;
     public readonly IPen WarningPen;
+    public readonly IPen HoverPen;
 
     public Styles(Palette palette, int paletteOffset, double zoom)
     {
@@ -87,6 +88,7 @@ public sealed class Styles
         StationPen = new Pen(Brush(palette.Ink), PenWidth(2));
         StationFill = Brush(palette.Prompt);
         WarningPen = new Pen(Brush(palette.Prompt), PenWidth(2));
+        HoverPen = new Pen(Brush(palette.Prompt), PenWidth(2));
     }
 
     private double PenWidth(double width)
