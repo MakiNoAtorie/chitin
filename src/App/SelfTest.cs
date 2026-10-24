@@ -67,16 +67,18 @@ internal static class SelfTest
             World shapesWorld = BuildShapesWorld();
             Render(shapesWorld, 640, 480, RenderMode.OpaqueExport, shapesPath);
 
-            bool collinear = Geom.GetLineIntersection(new Vec2(0, 0), new Vec2(10, 0),
-                new Vec2(20, 0), new Vec2(30, 0), 1000, out _);
-            bool parallel = Geom.GetLineIntersection(new Vec2(0, 0), new Vec2(10, 0),
-                new Vec2(0, 1), new Vec2(10, 1), 1000, out _);
-            bool cross = Geom.GetLineIntersection(new Vec2(0, 0), new Vec2(10, 10),
-                new Vec2(0, 10), new Vec2(10, 0), 1000, out Vec2 crossPoint);
-            Check("geom_collinear", !collinear);
-            Check("geom_parallel", !parallel);
-            Check("geom_cross", cross &&
-                Math.Abs(crossPoint.X - 5) <= 1e-6 && Math.Abs(crossPoint.Y - 5) <= 1e-6);
+            static Vec2? Crossing(Vec2 a, Vec2 b, Vec2 c, Vec2 d)
+            {
+                var lines = new World();
+                lines.TraceLines.Add(new TraceLine(a, b));
+                lines.TraceLines.Add(new TraceLine(c, d));
+                return lines.TraceCrossing();
+            }
+
+            Check("geom_collinear", Crossing(new Vec2(0, 0), new Vec2(10, 0), new Vec2(20, 0), new Vec2(30, 0)) == null);
+            Check("geom_parallel", Crossing(new Vec2(0, 0), new Vec2(10, 0), new Vec2(0, 1), new Vec2(10, 1)) == null);
+            Check("geom_cross", Crossing(new Vec2(0, 0), new Vec2(10, 10), new Vec2(0, 10), new Vec2(10, 0)) is
+                { } crossPoint && Math.Abs(crossPoint.X - 5) <= 1e-6 && Math.Abs(crossPoint.Y - 5) <= 1e-6);
 
             BuiltBox exactBox = BoxGeometry.Build(new Vec2(0, 0), new Vec2(100, 0),
                 new Vec2(0, 80), new Vec2(10, -50), new Vec2(1, 1), new Vec2(-1, 1));
@@ -776,6 +778,26 @@ internal static class SelfTest
             Check("text_field_keys", TextFieldKeys());
             Check("find_closes", FindCloses());
             Check("points_panel_edits", PointsPanelEdits());
+            Check("hit_face_front", HitFaceFront());
+            Check("new_document_clean", NewDocumentClean());
+            Check("click_slop", ClickSlop());
+            Check("ruler_half_ticks", Sheet.Ticks(2, 0, 400).All(tick => tick.Level != 1) &&
+                Sheet.Ticks(1.4, 0, 400).Any(tick => tick.Value == 25 && tick.Level == 1));
+            Check("project_finite", ReadFails("{\"vps\":[{\"x\":1e999,\"y\":0}]}", "") &&
+                ReadFails("{\"camera\":[0,-1e999]}", "") &&
+                ReadFails("{\"traceLines\":[{\"x0\":1e999,\"y0\":0,\"x1\":0,\"y1\":0}]}", "") &&
+                ReadFails("{\"version\":1.5}", "version 1.5"));
+            Check("restore_box_remap", RestoreBoxRemap());
+            var edgeWorld = new World();
+            edgeWorld.VanishingPoints[0] = new VanishingPoint(new Vec2(-320, -400), 0);
+            Check("vp_edge_corners", GuideBuilder.Build(edgeWorld, edgeWorld.Styles).Count(prim =>
+                prim.Kind == PrimKind.Line && ReferenceEquals(prim.Pen, edgeWorld.Styles.VPOutline[0])) == 2);
+            Check("reference_bursts", ReferenceBursts());
+            Check("level_from_menu", LevelFromMenu());
+            Check("export_odd_size", ExportOddSize());
+            Check("screen_pen_width", new Styles(Palette.Default, 4).VPLines[0].Thickness == 0.25 &&
+                new Styles(Palette.Default, 4, export: true).VPLines[0].Thickness == 1);
+            Check("reference_fits_project", World.FitsInProject(48L << 20) && !World.FitsInProject((48L << 20) + 1));
 
             WriteScreens(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path))!, "screens"));
 
@@ -1937,8 +1959,20 @@ internal static class SelfTest
 
             viewport.Undo();
             window.UpdateChrome();
-            return shown && moved && dropped && VpAt(world, 0, 0, 0) && X().Text == "320" &&
-                !viewport.History.CanUndo;
+            bool undone = VpAt(world, 0, 0, 0) && X().Text == "320" && !viewport.History.CanUndo;
+
+            // A fraction shows, and an edit to Y leaves X exactly where it was.
+            world.VanishingPoints[0]!.Pos = new Vec2(0.123, 0);
+            world.BumpRevision();
+            window.UpdateChrome();
+            bool fraction = X().Text == "320.12";
+            TextBox y = window.FindControl<StackPanel>("PointsList")!.GetLogicalDescendants().OfType<TextBox>()
+                .Single(box => AutomationProperties.GetName(box) == "Point 1 Y");
+            y.Focus();
+            y.Text = "250";
+            window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+            Dispatcher.UIThread.RunJobs();
+            return shown && moved && dropped && undone && fraction && VpAt(world, 0, 0.123, 10);
         }
         finally
         {
@@ -2243,6 +2277,199 @@ internal static class SelfTest
         world.ShowCone = true;
         world.BumpRevision();
         return world;
+    }
+
+    // Every pick on a box is a front face, and some picks fall where a back face lies behind it.
+    private static bool HitFaceFront()
+    {
+        var world = new World();
+        world.ApplyPreset(2);
+        Vec2 left = world.VanishingPoints[0]!.Pos;
+        Vec2 right = world.VanishingPoints[1]!.Pos;
+        var p0 = new Vec2(0, 200);
+        Vec2 p1 = p0 + (left - p0).Normalized() * 150;
+        Vec2 p2 = p0 + (right - p0).Normalized() * 150;
+        Vec2 p3 = BoxGeometry.FourthCorner(p0, p1, p2, (right - p1).Normalized(), (left - p2).Normalized());
+        var box = new BoxState { P0 = p0, P1 = p1, P2 = p2, P3 = p3, H = new Vec2(0, -120) };
+        BuiltBox built = BoxGeometry.Build(box);
+        int overBack = 0;
+        for (double x = -200; x <= 200; x += 4)
+        {
+            for (double y = 0; y <= 260; y += 4)
+            {
+                var point = new Vec2(x, y);
+                if (BoxGeometry.HitFace(new[] { box }, point) is not { } hit)
+                {
+                    continue;
+                }
+
+                if (!built.VisibleFaces.Contains(hit.Face))
+                {
+                    return false;
+                }
+
+                if (Enumerable.Range(0, 6).Any(face => !built.VisibleFaces.Contains(face) &&
+                        BoxGeometry.ContainsQuad(built.Faces[face], point)))
+                {
+                    overBack++;
+                }
+            }
+        }
+
+        return overBack > 0;
+    }
+
+    // A new document is clean, and removing or hiding a reference that is not there changes nothing.
+    private static bool NewDocumentClean()
+    {
+        var viewport = new ViewportControl();
+        viewport.ApplyCameraPreset(2);
+        viewport.NewDocument();
+        bool fresh = !viewport.World.IsDirty && viewport.History.UndoName == "New document";
+        viewport.RemoveReference();
+        viewport.ToggleReference();
+        return fresh && !viewport.World.IsDirty && viewport.History.UndoName == "New document";
+    }
+
+    // A click that moves a pixel or two is still a click; a second button during a drag changes nothing.
+    private static bool ClickSlop()
+    {
+        var viewport = new ViewportControl();
+        var window = new Window { Width = 800, Height = 600, Content = viewport };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            World world = viewport.World;
+            Point Screen(double x, double y) =>
+                new((x + world.Camera.X) * world.Zoom, (y + world.Camera.Y) * world.Zoom);
+            static Point Nudge(Point point) => new(point.X + 2, point.Y + 1);
+
+            window.MouseDown(Screen(-100, 0), MouseButton.Left);
+            window.MouseMove(Nudge(Screen(-100, 0)));
+            window.MouseUp(Nudge(Screen(-100, 0)), MouseButton.Left);
+            bool placed = world.VanishingPoints[0] != null;
+
+            Vec2 at = world.VanishingPoints[0]?.Pos ?? new Vec2();
+            Point onPoint = Screen(at.X, at.Y);
+            window.MouseDown(onPoint, MouseButton.Left);
+            window.MouseMove(Nudge(onPoint));
+            window.MouseUp(Nudge(onPoint), MouseButton.Left);
+            bool still = VpAt(world, 0, at.X, at.Y) && viewport.History.UndoName == "Place next point";
+
+            window.MouseDown(Screen(0, 100), MouseButton.Right);
+            window.MouseMove(Nudge(Screen(0, 100)));
+            window.MouseUp(Nudge(Screen(0, 100)), MouseButton.Right);
+            bool noLine = world.TraceLines.Count == 0;
+
+            var mid = new Point(onPoint.X + 20, onPoint.Y);
+            // Past the window edge: only a held capture still sees the pointer there.
+            var end = new Point(onPoint.X + 600, onPoint.Y);
+            window.MouseDown(onPoint, MouseButton.Left);
+            window.MouseMove(mid);
+            window.MouseDown(mid, MouseButton.Right, RawInputModifiers.LeftMouseButton);
+            window.MouseUp(mid, MouseButton.Right, RawInputModifiers.LeftMouseButton);
+            Dispatcher.UIThread.RunJobs();
+            window.MouseMove(end);
+            window.MouseUp(end, MouseButton.Left);
+            bool oneDrag = world.VanishingPoints[0] is { } moved &&
+                Math.Abs(moved.Pos.X - (at.X + 600 / world.Zoom)) < 1e-9 && moved.Pos.Y == at.Y &&
+                world.TraceLines.Count == 0 && viewport.History.UndoName == "Move vanishing point";
+            viewport.Undo();
+            return placed && still && noLine && oneDrag && VpAt(world, 0, at.X, at.Y);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    private static bool ReadFails(string json, string message)
+    {
+        try
+        {
+            ProjectFile.Read(json);
+            return false;
+        }
+        catch (Exception exception)
+        {
+            return exception.Message.Contains(message);
+        }
+    }
+
+    // A dropped box moves the shapes on later boxes to the new index; shapes on the dropped box keep their quad.
+    private static bool RestoreBoxRemap()
+    {
+        var state = new WorldState();
+        state.Boxes.Add(new BoxState { P0 = new Vec2(double.NaN, 0) });
+        state.Boxes.Add(new BoxState
+        {
+            P1 = new Vec2(10, 0), P2 = new Vec2(0, 10), P3 = new Vec2(10, 10), H = new Vec2(0, -10)
+        });
+        Vec2[] quad = { new(0, 0), new(10, 0), new(10, 10), new(0, 10) };
+        state.Subdivisions.Add(new SubdivisionState { Quad = quad, N = 2, M = 2, Box = 1, Face = 2 });
+        state.Ellipses.Add(new EllipseState { Quad = quad, Cx = 0.5, Cy = 0.5, R = 0.3, Box = 0, Face = 1 });
+        var world = new World();
+        world.Restore(state);
+        return world.Boxes.Count == 1 && world.Subdivisions[0].Box == 0 && world.Ellipses[0].Box == -1;
+    }
+
+    // Flips are a step each, an opacity burst is one step, and Alt + wheel scales about the pointer.
+    private static bool ReferenceBursts()
+    {
+        var viewport = new ViewportControl();
+        var window = new Window { Width = 800, Height = 600, Content = viewport };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            World world = viewport.World;
+            viewport.UseReferenceImage(TestBitmap(), "Paste reference image");
+            Command Named(string name) => viewport.Commands.Single(command => command.Name == name);
+            viewport.RunCommandAsync(Named("Flip reference horizontally"));
+            viewport.RunCommandAsync(Named("Flip reference vertically"));
+            viewport.Undo();
+            bool flipsApart = world.Reference.FlipH && !world.Reference.FlipV;
+            viewport.Undo();
+
+            viewport.RunCommandAsync(Named("Lower reference opacity"));
+            viewport.RunCommandAsync(Named("Lower reference opacity"));
+            bool lowered = Math.Abs(world.Reference.Opacity - 0.8) < 1e-9;
+            viewport.Undo();
+            bool burstOne = world.Reference.Opacity == 1;
+
+            var pointer = new Point((100 + world.Camera.X) * world.Zoom, (50 + world.Camera.Y) * world.Zoom);
+            window.MouseWheel(pointer, new Vector(0, 1), RawInputModifiers.Alt);
+            bool aboutPointer = Math.Abs(world.Reference.Offset.X + 10) < 1e-9 &&
+                Math.Abs(world.Reference.Offset.Y + 5) < 1e-9;
+            return flipsApart && lowered && burstOne && aboutPointer;
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    // From a menu (no pointer over the viewport) point 2 levels to point 1.
+    private static bool LevelFromMenu()
+    {
+        var viewport = new ViewportControl();
+        World world = viewport.World;
+        world.VanishingPoints[0] = new VanishingPoint(new Vec2(-100, 10), 0);
+        world.VanishingPoints[1] = new VanishingPoint(new Vec2(100, 50), 0);
+        viewport.RunCommandAsync("Level points 1 and 2");
+        return VpAt(world, 0, -100, 10) && VpAt(world, 1, 100, 10) &&
+            viewport.History.UndoName == "Level points 1 and 2";
+    }
+
+    // An odd-sized plane fills the export from its first pixel to its last.
+    private static bool ExportOddSize()
+    {
+        var viewport = new ViewportControl();
+        viewport.World.ResetDocument(641, 481);
+        using Bitmap bitmap = viewport.RenderPlane();
+        (byte[] pixels, int stride) = ReadPixels(bitmap);
+        return PixelAt(pixels, stride, 0, 0).A == 255 && PixelAt(pixels, stride, 640, 480).A == 255;
     }
 
     private static bool VpAt(World world, int index, double x, double y)

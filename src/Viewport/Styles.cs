@@ -4,6 +4,8 @@ namespace Chitin;
 
 // Every pen and brush for one palette at one zoom. Pen widths are in world units, so they
 // depend on the zoom; an export builds its own Styles instead of changing the live view.
+// On screen a pen keeps its pixel width at every zoom. An export keeps at least one world unit, so
+// a larger export looks like the plane scaled up.
 public sealed class Styles
 {
     public readonly double Zoom;
@@ -34,9 +36,12 @@ public sealed class Styles
     public readonly IPen HoverPen;
     public readonly IBrush MutedText;
 
-    public Styles(Palette palette, double zoom)
+    private readonly bool _export;
+
+    public Styles(Palette palette, double zoom, bool export = false)
     {
         Zoom = zoom;
+        _export = export;
         VPLines = new IPen[9];
         for (int i = 0; i < 9; i++)
         {
@@ -83,7 +88,7 @@ public sealed class Styles
 
     private double PenWidth(double width)
     {
-        return Math.Max(1, width / Zoom);
+        return _export ? Math.Max(1, width / Zoom) : width / Zoom;
     }
 
     private static IBrush Brush(Color color)

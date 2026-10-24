@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -33,15 +34,14 @@ public static class ProjectFile
         string? backgroundPng = null;
         if (world.BackgroundImg is { } image)
         {
-            using var stream = new MemoryStream();
-            image.Save(stream);
-            long encodedLength = (stream.Length + 2) / 3 * 4;
-            if (encodedLength > World.MaxEncodedImageBytes)
+            byte[] png = World.EncodePng(image);
+            if (!World.FitsInProject(png.LongLength))
             {
-                throw new InvalidOperationException("Background image is larger than 64 MB encoded.");
+                throw new InvalidOperationException(
+                    "The reference image is over 64 MB as PNG. Remove it (Alt+I) or use a smaller image.");
             }
 
-            backgroundPng = Convert.ToBase64String(stream.ToArray());
+            backgroundPng = Convert.ToBase64String(png);
         }
 
         node["backgroundPng"] = backgroundPng;
@@ -62,12 +62,13 @@ public static class ProjectFile
             throw new InvalidDataException("Project file must contain a JSON object.");
         }
 
-        // A missing version reads as 1; a newer one may use fields this build would drop.
-        if (obj["version"] is JsonValue versionValue && versionValue.TryGetValue(out int version) &&
+        // A missing version reads as 1; a newer one (2, or 1.5) may use fields this build would drop.
+        if (obj["version"] is JsonValue versionValue && versionValue.TryGetValue(out double version) &&
             version > Version)
         {
             throw new InvalidDataException(
-                $"Project file version {version} is newer than this app can read (version {Version}).");
+                $"Project file version {version.ToString(CultureInfo.InvariantCulture)} is newer than this " +
+                $"app can read (version {Version}).");
         }
 
         WorldState state = obj.Deserialize<WorldState>(Options)
@@ -120,6 +121,12 @@ public static class ProjectFile
         return state;
     }
 
+    // The reader turns 1e999 into infinity; such a value would also make the next save fail.
+    private static double Finite(double value)
+    {
+        return double.IsFinite(value) ? value : throw new JsonException("A coordinate is out of range.");
+    }
+
     private sealed class Vec2Converter : JsonConverter<Vec2>
     {
         public override Vec2 Read(ref Utf8JsonReader reader, Type typeToConvert,
@@ -131,9 +138,9 @@ public static class ProjectFile
             }
 
             reader.Read();
-            double x = reader.GetDouble();
+            double x = Finite(reader.GetDouble());
             reader.Read();
-            double y = reader.GetDouble();
+            double y = Finite(reader.GetDouble());
             reader.Read();
             if (reader.TokenType != JsonTokenType.EndArray)
             {
@@ -164,7 +171,7 @@ public static class ProjectFile
                 ? element.GetInt32()
                 : 0;
             return new VanishingPoint(
-                new Vec2(root.GetProperty("x").GetDouble(), root.GetProperty("y").GetDouble()),
+                new Vec2(Finite(root.GetProperty("x").GetDouble()), Finite(root.GetProperty("y").GetDouble())),
                 density);
         }
 
@@ -187,8 +194,8 @@ public static class ProjectFile
             using JsonDocument document = JsonDocument.ParseValue(ref reader);
             JsonElement root = document.RootElement;
             return new TraceLine(
-                new Vec2(root.GetProperty("x0").GetDouble(), root.GetProperty("y0").GetDouble()),
-                new Vec2(root.GetProperty("x1").GetDouble(), root.GetProperty("y1").GetDouble()));
+                new Vec2(Finite(root.GetProperty("x0").GetDouble()), Finite(root.GetProperty("y0").GetDouble())),
+                new Vec2(Finite(root.GetProperty("x1").GetDouble()), Finite(root.GetProperty("y1").GetDouble())));
         }
 
         public override void Write(Utf8JsonWriter writer, TraceLine value,

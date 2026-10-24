@@ -134,7 +134,8 @@ public static class BoxGeometry
 
         return new BuiltBox(vertices, faces, visibleFaces, visible, hidden);
     }
-    // The smallest face under the point on the topmost box that has one: its corners, box and face index.
+    // The smallest front face under the point on the topmost box that has one: its corners, box and
+    // face index. A back face projects inside the front ones, so it is never picked.
     public static (Vec2[] Quad, int Box, int Face)? HitFace(IReadOnlyList<BoxState> boxes, Vec2 point,
         VanishingPoint?[]? points = null)
     {
@@ -143,7 +144,7 @@ public static class BoxGeometry
             int best = -1;
             double bestArea = double.MaxValue;
             BuiltBox built = Build(boxes[boxIndex], points);
-            for (int face = 0; face < built.Faces.Length; face++)
+            foreach (int face in built.VisibleFaces)
             {
                 if (!ContainsQuad(built.Faces[face], point))
                 {

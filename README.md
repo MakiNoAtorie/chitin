@@ -41,7 +41,8 @@ menu item shows its shortcut. The essentials:
 
 - **Points** (`P`, the default tool): click the empty plane to place the next point, drag a point to
   move it. `1`-`9` drop a point at the cursor, `Ctrl+1`-`9` select, `Alt+1`-`9` or `Delete` delete,
-  `Up`/`Down` change the selected point's density, `H` levels points 1 and 2. Camera menu: 1-, 2-
+  `Up`/`Down` change the selected point's density, `H` levels points 1 and 2 at the pointer (from
+  the menu, point 2 to point 1). Camera menu: 1-, 2-
   and 3-point presets.
 - **Points panel** (right; `Ctrl+K` hides it): type a point's X and Y, step its density, delete it.
 - **Navigate**: wheel or two-finger scroll pans, `Ctrl`+wheel or pinch zooms, `Space`+drag or
@@ -59,7 +60,7 @@ menu item shows its shortcut. The essentials:
   the radius (a drag from the centre works too).
 - `Backspace` in a tool deletes its last shape; `Escape` leaves the tool.
 - **Reference image**: `Ctrl+I` load, `Ctrl+V` paste (fitted to the plane), `Alt`+drag move,
-  `Alt`+wheel scale, `[`/`]` opacity, `I` show or hide, `Alt+I` remove.
+  `Alt`+wheel scale about the pointer, `[`/`]` opacity, `I` show or hide, `Alt+I` remove.
 - **View**: `G` grid, `+`/`-` grid size, `V` cone of vision and station point, `Ctrl+Shift+P` dark
   palette. These are view settings: saved with the project, but not undone and never a reason to
   ask before closing.

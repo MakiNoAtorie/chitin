@@ -8,6 +8,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 
 namespace Chitin;
 
@@ -17,6 +18,16 @@ public class ViewportControl : Control
 
     private bool _centered;
     private bool _placeOnClick;
+
+    // The button of the gesture in progress, or null. One gesture at a time.
+    private MouseButton? _dragButton;
+
+    // Avalonia drops the capture on any release: set when another button's release must not end the drag.
+    private bool _recapture;
+
+    // The reference change a burst continues (wheel ticks, a held [ or ]), and when it last ran.
+    private string? _referenceRun;
+    private long _referenceRunTime;
     private bool _spaceHeld;
     private Vec2 _mouseWorld = new();
     private Bitmap? _clipboardBitmap;
@@ -51,7 +62,8 @@ public class ViewportControl : Control
 
     public override void Render(DrawingContext context)
     {
-        if (!_centered)
+        // Before layout gives a size there is nothing to centre on: wait for a frame that has one.
+        if (!_centered && Bounds.Width >= 1 && Bounds.Height >= 1)
         {
             _centered = true;
             CenterCamera();
@@ -100,6 +112,19 @@ public class ViewportControl : Control
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
+        // A second button during a drag would replace the drag half-way; it is ignored, and so is
+        // its release. A gesture whose button is no longer down lost its release: it ends here.
+        if (_dragButton is { } held)
+        {
+            if (IsHeld(e.GetCurrentPoint(this).Properties, held))
+            {
+                e.Handled = true;
+                return;
+            }
+
+            EndGesture();
+        }
+
         Focus();
         World.ClearError();
 
@@ -130,6 +155,7 @@ public class ViewportControl : Control
         {
             _construction.Begin(position, _mouseWorld, e.KeyModifiers);
             World.Overlay = _construction;
+            _dragButton = MouseButton.Left;
             e.Pointer.Capture(this);
             InvalidateVisual();
             return;
@@ -153,6 +179,7 @@ public class ViewportControl : Control
         {
             mode.Init(position, _mouseWorld);
             World.Overlay = mode;
+            _dragButton = kind.GetMouseButton();
             e.Pointer.Capture(this);
         }
 
@@ -242,8 +269,16 @@ public class ViewportControl : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        // Only the release of the button that started the gesture ends it. InitialPressMouseButton
+        // names the first button still held, not the one released.
+        if (_dragButton != e.GetCurrentPoint(this).Properties.PointerUpdateKind.GetMouseButton())
+        {
+            _recapture = _dragButton != null;
+            return;
+        }
 
-        if (_placeOnClick && World.Overlay is VanishingPointMode { HasMoved: false })
+        _dragButton = null;
+        if (_placeOnClick && World.Overlay is VanishingPointMode { Dragged: false })
         {
             PlaceNextPoint(_mouseWorld);
         }
@@ -256,6 +291,51 @@ public class ViewportControl : Control
         InvalidateVisual();
     }
 
+    // Capture taken mid-gesture (a dialog, another window): the gesture ends where it is, unfinished.
+    // After another button's release the drag goes on: capture is taken back once Avalonia is done.
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        if (_recapture)
+        {
+            _recapture = false;
+            IPointer pointer = e.Pointer;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_dragButton != null)
+                {
+                    pointer.Capture(this);
+                }
+            });
+            return;
+        }
+
+        if (_dragButton != null)
+        {
+            EndGesture();
+        }
+    }
+
+    private void EndGesture()
+    {
+        _dragButton = null;
+        _placeOnClick = false;
+        World.Overlay = _construction;
+        UpdateHover();
+        InvalidateVisual();
+    }
+
+    private static bool IsHeld(PointerPointProperties properties, MouseButton button)
+    {
+        return button switch
+        {
+            MouseButton.Left => properties.IsLeftButtonPressed,
+            MouseButton.Middle => properties.IsMiddleButtonPressed,
+            MouseButton.Right => properties.IsRightButtonPressed,
+            _ => false
+        };
+    }
+
     // Wheel and two-finger scroll pan; Ctrl + wheel (a trackpad pinch too) zooms about the cursor.
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
@@ -266,7 +346,16 @@ public class ViewportControl : Control
         {
             if (delta.Y != 0)
             {
-                ChangeReference("Scale reference", settings => settings.Scale *= Math.Pow(1.1, delta.Y));
+                // About the pointer: the image point under it stays put.
+                Vec2 pointer = ToWorld(position);
+                double factor = Math.Pow(1.1, delta.Y);
+                ChangeReference("Scale reference", settings =>
+                {
+                    double scale = Math.Clamp(settings.Scale * factor, World.MinReferenceScale,
+                        World.MaxReferenceScale);
+                    settings.Offset = pointer - (pointer - settings.Offset) * (scale / settings.Scale);
+                    settings.Scale = scale;
+                }, burst: true);
             }
         }
         else if ((e.KeyModifiers & KeyModifiers.Control) != 0)
@@ -464,9 +553,9 @@ public class ViewportControl : Control
         On("Show / hide reference", new[] { K(Key.I) }, ToggleReference);
         On("Remove reference", new[] { K(Key.I, alt) }, RemoveReference);
         On("Lower reference opacity", WithShift(Key.OemOpenBrackets), () => ChangeReference("Reference opacity",
-            settings => settings.Opacity -= 0.1));
+            settings => settings.Opacity -= 0.1, burst: true));
         On("Raise reference opacity", WithShift(Key.OemCloseBrackets), () => ChangeReference("Reference opacity",
-            settings => settings.Opacity += 0.1));
+            settings => settings.Opacity += 0.1, burst: true));
         Sep();
         On("Flip reference horizontally", Array.Empty<KeyGesture>(), () => ChangeReference("Flip reference",
             settings => settings.FlipH = !settings.FlipH));
@@ -581,11 +670,19 @@ public class ViewportControl : Control
         }
     }
 
+    // To the pointer's height while it is over the viewport. From a menu or Find the pointer is not
+    // there: point 2 levels to point 1.
     private void LevelHorizon()
     {
-        if (World.VanishingPoints[0] == null && World.VanishingPoints[1] == null)
+        if ((World.VanishingPoints[0] ?? World.VanishingPoints[1]) is not { } first)
         {
             World.SetStatus("Level points 1 and 2: place point 1 or 2 first.");
+            return;
+        }
+
+        double y = PointerPosition != null ? _mouseWorld.Y : first.Pos.Y;
+        if (World.VanishingPoints.Take(2).All(point => point == null || point.Pos.Y == y))
+        {
             return;
         }
 
@@ -594,7 +691,7 @@ public class ViewportControl : Control
         {
             if (World.VanishingPoints[i] is { } point)
             {
-                point.Pos = new Vec2(point.Pos.X, _mouseWorld.Y);
+                point.Pos = new Vec2(point.Pos.X, y);
             }
         }
 
@@ -696,11 +793,15 @@ public class ViewportControl : Control
 
     private void DropPointAtCrossing(int index)
     {
-        if (World.TraceLines.Count < 2 ||
-            !Geom.GetLineIntersection(World.TraceLines[0].Start, World.TraceLines[0].End,
-                World.TraceLines[1].Start, World.TraceLines[1].End, World.CrazyFar, out Vec2 intersection))
+        if (World.TraceCrossing() is not { } intersection)
         {
             World.SetStatus("Trace lines do not cross: draw two crossing trace lines first.");
+            return;
+        }
+
+        if (!GuideBuilder.FanReachesPlane(World, intersection))
+        {
+            World.SetStatus("Trace lines cross too far off the plane for guides to reach it: angle them more.");
             return;
         }
 
@@ -758,6 +859,7 @@ public class ViewportControl : Control
         World.Subdivisions.Clear();
         World.Ellipses.Clear();
         World.SetReferenceImage(null);
+        World.BumpRevision();
         InvalidateVisual();
     }
 
@@ -784,6 +886,7 @@ public class ViewportControl : Control
         PushUndo("New document");
         ExitTool();
         World.Restore(new WorldState { Palette = Palette.Default.Name });
+        World.MarkSaved();
         CurrentFile = null;
         CenterCamera();
         InvalidateVisual();
@@ -808,6 +911,7 @@ public class ViewportControl : Control
         }
 
         WorldState view = World.Capture();
+        _referenceRun = null;
         ExitTool();
         World.Restore(state);
         World.RestoreView(view);
@@ -820,6 +924,7 @@ public class ViewportControl : Control
     private void PushUndo(string name)
     {
         History.Push(World.Capture(), name);
+        _referenceRun = null;
     }
 
     public void ToggleGrid()
@@ -984,6 +1089,12 @@ public class ViewportControl : Control
 
     public void ToggleReference()
     {
+        if (World.BackgroundImg == null)
+        {
+            World.SetStatus("Show / hide reference: load or paste a reference image first.");
+            return;
+        }
+
         PushUndo("Show / hide reference");
         ReferenceSettings next = World.Reference.Clone();
         next.Hidden = !next.Hidden;
@@ -993,8 +1104,9 @@ public class ViewportControl : Control
 
     private bool ReferenceShown => World.BackgroundImg != null && !World.Reference.Hidden;
 
-    // One undo step per run of the same change: a burst of wheel ticks or [ ] presses undoes at once.
-    private void ChangeReference(string name, Action<ReferenceSettings> change)
+    // A burst (wheel ticks, [ or ] presses) is one undo step: the same change again within a second,
+    // with no other undo step between. Any other change is a step of its own.
+    private void ChangeReference(string name, Action<ReferenceSettings> change, bool burst = false)
     {
         if (World.BackgroundImg == null)
         {
@@ -1002,10 +1114,14 @@ public class ViewportControl : Control
             return;
         }
 
-        if (History.UndoName != name)
+        long now = Environment.TickCount64;
+        if (!burst || _referenceRun != name || History.UndoName != name || now - _referenceRunTime > 1000)
         {
             PushUndo(name);
         }
+
+        _referenceRun = burst ? name : null;
+        _referenceRunTime = now;
 
         ReferenceSettings next = World.Reference.Clone();
         change(next);
@@ -1015,11 +1131,13 @@ public class ViewportControl : Control
 
     public void RemoveReference()
     {
-        if (World.BackgroundImg != null)
+        if (World.BackgroundImg == null)
         {
-            PushUndo("Remove reference");
+            World.SetStatus("Remove reference: there is no reference image.");
+            return;
         }
 
+        PushUndo("Remove reference");
         World.SetReferenceImage(null);
         InvalidateVisual();
     }
@@ -1266,10 +1384,11 @@ public class ViewportControl : Control
     // A new reference is fitted inside the plane; the document keeps its size.
     internal void UseReferenceImage(Bitmap bitmap, string name)
     {
-        if ((long)bitmap.PixelSize.Width * bitmap.PixelSize.Height > World.MaxDecodedImagePixels)
+        // Checked before the undo step, so a refused image leaves no step behind.
+        if (World.ImageRefusal(bitmap) is { } refusal)
         {
             bitmap.Dispose();
-            World.SetError("Image refused: larger than 40 megapixels.");
+            World.SetError(refusal);
             InvalidateVisual();
             return;
         }
@@ -1344,6 +1463,8 @@ public class ViewportControl : Control
         return RenderPlane(World.PicturePlaneWidth, World.PicturePlaneHeight, false);
     }
 
+    // The camera puts the plane's top-left corner on the bitmap's: the plane runs from -half to
+    // size - half, which for an odd size is not centred on 0.
     internal Bitmap RenderPlane(int width, int height, bool transparent)
     {
         double zoom = (double)width / World.PicturePlaneWidth;
@@ -1352,7 +1473,8 @@ public class ViewportControl : Control
         {
             Renderer.Draw(context, World, new Size(width, height),
                 transparent ? RenderMode.TransparentExport : RenderMode.OpaqueExport,
-                World.StylesAt(zoom), new Vec2(width / 2.0 / zoom, height / 2.0 / zoom));
+                World.StylesAt(zoom, export: true),
+                new Vec2(World.PicturePlaneWidthHalf, World.PicturePlaneHeightHalf));
         }
 
         return renderTarget;

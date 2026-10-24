@@ -15,12 +15,14 @@ public static class Sheet
     {
         int minor = Steps.FirstOrDefault(step => step * zoom >= 7, Steps[^1]);
         int major = minor * (minor * 5 * zoom >= 48 ? 5 : 10);
+        // An odd major (5, 25, 125) has no whole half: no half-major ticks.
+        int half = major % 2 == 0 ? major / 2 : 0;
         var ticks = new List<RulerTick>();
         long first = (long)Math.Floor(-offset / minor) * minor;
         double last = length / zoom - offset;
         for (long u = first; u <= last; u += minor)
         {
-            int level = u % major == 0 ? 2 : u % (major / 2) == 0 ? 1 : 0;
+            int level = u % major == 0 ? 2 : half > 0 && u % half == 0 ? 1 : 0;
             ticks.Add(new RulerTick((u + offset) * zoom, level, (int)u));
         }
 

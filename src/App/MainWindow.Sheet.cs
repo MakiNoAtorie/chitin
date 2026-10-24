@@ -188,9 +188,7 @@ public partial class MainWindow
             return message;
         }
 
-        if (world.TraceLines.Count > 1 &&
-            Geom.GetLineIntersection(world.TraceLines[0].Start, world.TraceLines[0].End,
-                world.TraceLines[1].Start, world.TraceLines[1].End, world.CrazyFar, out _))
+        if (world.TraceCrossing() is { } crossing && GuideBuilder.FanReachesPlane(world, crossing))
         {
             return "Trace lines cross: Ctrl+Shift+1-9 drops a point there";
         }
@@ -366,27 +364,40 @@ public partial class MainWindow
         return Viewport.RunCommandAsync(command);
     }
 
-    // Typed coordinates are document units (plane top-left = 0). Only an edited value moves the point.
+    // Typed coordinates are document units (plane top-left = 0). Only an edited field moves its axis:
+    // the other keeps the exact position its rounded text stands for.
     private void ApplyCoords(int index)
     {
         World world = Viewport.World;
         PointRow row = _pointRows[index];
         if (world.VanishingPoints[index] is { } point &&
-            double.TryParse(row.X.Text, NumberStyles.Float, Inv, out double x) && double.IsFinite(x) &&
-            double.TryParse(row.Y.Text, NumberStyles.Float, Inv, out double y) && double.IsFinite(y) &&
-            (row.X.Text != Coord(point.Pos.X, world.PicturePlaneWidthHalf) ||
-             row.Y.Text != Coord(point.Pos.Y, world.PicturePlaneHeightHalf)))
+            Typed(row.X, point.Pos.X, world.PicturePlaneWidthHalf) is { } x &&
+            Typed(row.Y, point.Pos.Y, world.PicturePlaneHeightHalf) is { } y)
         {
-            Viewport.MovePoint(index, new Vec2(x - world.PicturePlaneWidthHalf, y - world.PicturePlaneHeightHalf));
+            Viewport.MovePoint(index, new Vec2(x, y));
         }
 
         _pointsRevision = -1;
         ScheduleChrome();
     }
 
+    // The world coordinate a field holds: the point's own when the text is unchanged, null when the
+    // text is not a number.
+    private static double? Typed(TextBox box, double current, int half)
+    {
+        if (box.Text == Coord(current, half))
+        {
+            return current;
+        }
+
+        return double.TryParse(box.Text, NumberStyles.Float, Inv, out double value) && double.IsFinite(value)
+            ? value - half
+            : null;
+    }
+
     private static string Coord(double world, int half)
     {
-        return (world + half).ToString("0", Inv);
+        return (world + half).ToString("0.##", Inv);
     }
 
     private void UpdatePoints()

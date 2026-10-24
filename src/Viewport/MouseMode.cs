@@ -8,9 +8,17 @@ public class MouseMode
 {
     protected readonly World World;
 
+    // A press that moves less than this, in screen pixels, is a click: a stylus, touch or fine mouse
+    // click moves a pixel or two between press and release.
+    public const double ClickSlop = 4;
+
+    public Vec2 PressScreen = new();
     public Vec2 LastScreen = new();
     public Vec2 MoveDelta = new();
     public bool HasMoved;
+
+    // Moved beyond the click slop since the press.
+    public bool Dragged;
 
     protected MouseMode(World world)
     {
@@ -20,8 +28,10 @@ public class MouseMode
     public virtual void Init(Point screen, Vec2 world)
     {
         LastScreen = new Vec2(screen.X, screen.Y);
+        PressScreen = LastScreen;
         MoveDelta = new Vec2();
         HasMoved = false;
+        Dragged = false;
     }
 
     public virtual void MouseMoved(Point screen, Vec2 world, KeyModifiers modifiers)
@@ -30,6 +40,7 @@ public class MouseMode
         MoveDelta = position - LastScreen;
         LastScreen = position;
         HasMoved = true;
+        Dragged |= position.DistFrom(PressScreen) >= ClickSlop;
     }
 
     public virtual void MouseUp()
@@ -61,6 +72,7 @@ internal sealed class VanishingPointMode : MouseMode
 {
     private readonly Action _pushUndo;
     private bool _pushed;
+    private bool _following;
 
     public VanishingPointMode(World world, Action pushUndo) : base(world)
     {
@@ -70,6 +82,19 @@ internal sealed class VanishingPointMode : MouseMode
     public override void MouseMoved(Point screen, Vec2 world, KeyModifiers modifiers)
     {
         base.MouseMoved(screen, world, modifiers);
+        // Within the click slop the point stays; past it, the point catches up with the pointer.
+        if (!Dragged)
+        {
+            MoveDelta = new Vec2();
+            return;
+        }
+
+        if (!_following)
+        {
+            MoveDelta = LastScreen - PressScreen;
+            _following = true;
+        }
+
         int index = World.SelectionIdx;
         if (index > -1 && World.VanishingPoints[index] is { } point &&
             MoveDelta != default)
@@ -149,7 +174,8 @@ internal sealed class TraceLineMode : MouseMode
 
     public override void MouseUp()
     {
-        if (!HasMoved)
+        // A click adds no line: a line of a pixel or two has no direction worth a trace slot.
+        if (!Dragged)
         {
             return;
         }

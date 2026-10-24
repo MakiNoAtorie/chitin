@@ -87,6 +87,13 @@ public static class GuideBuilder
         return Math.Min(Math.Max((int)(point.Pos.Length() / 32.0), 4), MaxAutomaticDensity);
     }
 
+    // A fan is drawn when its lines, CrazyFar long each way, can reach the plane.
+    public static bool FanReachesPlane(World world, Vec2 point)
+    {
+        double far = world.CrazyFar;
+        return new Rect(point.X - far, point.Y - far, far * 2, far * 2).Intersects(PlaneRect(world));
+    }
+
     public static Rect PlaneRect(World world)
     {
         return new Rect(-world.PicturePlaneWidthHalf, -world.PicturePlaneHeightHalf,
@@ -318,8 +325,7 @@ public static class GuideBuilder
         VanishingPoint point, Rect plane)
     {
         double far = world.CrazyFar;
-        var fanBounds = new Rect(point.Pos.X - far, point.Pos.Y - far, far * 2, far * 2);
-        if (fanBounds.Intersects(plane))
+        if (FanReachesPlane(world, point.Pos))
         {
             int density = FanDensity(point);
             double step = 360.0 / (density * 4.0);
@@ -336,59 +342,28 @@ public static class GuideBuilder
 
         double halfWidth = world.PicturePlaneWidthHalf;
         double halfHeight = world.PicturePlaneHeightHalf;
-        if (point.Pos.X < -halfWidth || point.Pos.X > halfWidth ||
-            point.Pos.Y < -halfHeight || point.Pos.Y > halfHeight)
+        // Off the plane: lines to the two plane corners that frame the point. On an edge line the
+        // point counts as inside on that axis.
+        bool left = point.Pos.X < -halfWidth;
+        bool right = point.Pos.X > halfWidth;
+        bool above = point.Pos.Y < -halfHeight;
+        bool below = point.Pos.Y > halfHeight;
+        if (left || right || above || below)
         {
-            Vec2? cornerA = null;
-            Vec2? cornerB = null;
-
-            if (point.Pos.X < -halfWidth && point.Pos.Y < -halfHeight)
+            (Vec2 a, Vec2 b) = (left, right, above, below) switch
             {
-                cornerA = new Vec2(-halfWidth, halfHeight);
-                cornerB = new Vec2(halfWidth, -halfHeight);
-            }
-            else if (point.Pos.X > -halfWidth && point.Pos.X < halfWidth && point.Pos.Y < -halfHeight)
-            {
-                cornerA = new Vec2(-halfWidth, -halfHeight);
-                cornerB = new Vec2(halfWidth, -halfHeight);
-            }
-            else if (point.Pos.X > halfWidth && point.Pos.Y < -halfHeight)
-            {
-                cornerA = new Vec2(-halfWidth, -halfHeight);
-                cornerB = new Vec2(halfWidth, halfHeight);
-            }
-            else if (point.Pos.X < -halfWidth && point.Pos.Y > -halfHeight && point.Pos.Y < halfHeight)
-            {
-                cornerA = new Vec2(-halfWidth, -halfHeight);
-                cornerB = new Vec2(-halfWidth, halfHeight);
-            }
-            else if (point.Pos.X > halfWidth && point.Pos.Y > -halfHeight && point.Pos.Y < halfHeight)
-            {
-                cornerA = new Vec2(halfWidth, -halfHeight);
-                cornerB = new Vec2(halfWidth, halfHeight);
-            }
-            else if (point.Pos.X < -halfWidth && point.Pos.Y > halfHeight)
-            {
-                cornerA = new Vec2(-halfWidth, -halfHeight);
-                cornerB = new Vec2(halfWidth, halfHeight);
-            }
-            else if (point.Pos.X > -halfWidth && point.Pos.X < halfWidth && point.Pos.Y > halfHeight)
-            {
-                cornerA = new Vec2(-halfWidth, halfHeight);
-                cornerB = new Vec2(halfWidth, halfHeight);
-            }
-            else if (point.Pos.X > halfWidth && point.Pos.Y > halfHeight)
-            {
-                cornerA = new Vec2(halfWidth, -halfHeight);
-                cornerB = new Vec2(-halfWidth, halfHeight);
-            }
-
-            if (cornerA is { } a && cornerB is { } b)
-            {
-                IPen pen = styles.VPOutline[world.SelectionIdx == index ? 1 : 0];
-                prims.Add(Prim.Line(pen, point.Pos, a, null, screenOnly: true));
-                prims.Add(Prim.Line(pen, point.Pos, b, null, screenOnly: true));
-            }
+                (true, _, true, _) => (new Vec2(-halfWidth, halfHeight), new Vec2(halfWidth, -halfHeight)),
+                (_, true, true, _) => (new Vec2(-halfWidth, -halfHeight), new Vec2(halfWidth, halfHeight)),
+                (true, _, _, true) => (new Vec2(-halfWidth, -halfHeight), new Vec2(halfWidth, halfHeight)),
+                (_, true, _, true) => (new Vec2(halfWidth, -halfHeight), new Vec2(-halfWidth, halfHeight)),
+                (_, _, true, _) => (new Vec2(-halfWidth, -halfHeight), new Vec2(halfWidth, -halfHeight)),
+                (_, _, _, true) => (new Vec2(-halfWidth, halfHeight), new Vec2(halfWidth, halfHeight)),
+                (true, _, _, _) => (new Vec2(-halfWidth, -halfHeight), new Vec2(-halfWidth, halfHeight)),
+                _ => (new Vec2(halfWidth, -halfHeight), new Vec2(halfWidth, halfHeight))
+            };
+            IPen pen = styles.VPOutline[world.SelectionIdx == index ? 1 : 0];
+            prims.Add(Prim.Line(pen, point.Pos, a, null, screenOnly: true));
+            prims.Add(Prim.Line(pen, point.Pos, b, null, screenOnly: true));
         }
 
         int selected = world.SelectionIdx == index ? 1 : 0;

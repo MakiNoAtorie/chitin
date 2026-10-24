@@ -167,7 +167,7 @@ public class World
 
     public void Restore(WorldState state)
     {
-        ResetDocument(state.Doc.W, state.Doc.H);
+        SetDocumentSize(state.Doc.W, state.Doc.H);
         Bitmap? previousImage = BackgroundImg;
         BackgroundImg = state.Background;
         ReleaseImage(previousImage);
@@ -189,14 +189,19 @@ public class World
             TraceLines.Add(new TraceLine(traceLine.Start, traceLine.End));
         }
 
+        // A dropped box shifts the ones after it: shapes follow the new index, or their stored quad.
         Boxes = new List<BoxState>();
+        var boxIndex = new List<int>();
         foreach (BoxState box in state.Boxes ?? new List<BoxState>())
         {
             if (box == null || !IsFinite(box.P0) || !IsFinite(box.P1) || !IsFinite(box.P2) ||
                 !IsFinite(box.P3) || !IsFinite(box.H))
             {
+                boxIndex.Add(-1);
                 continue;
             }
+
+            boxIndex.Add(Boxes.Count);
 
             // A bad link makes it an ordinary box, drawn as stored.
             BoxState copy = box.Clone();
@@ -222,6 +227,7 @@ public class World
             SubdivisionState copy = subdivision.Clone();
             copy.N = Math.Clamp(copy.N, 1, 64);
             copy.M = Math.Clamp(copy.M, 1, 64);
+            copy.Box = RemapBox(boxIndex, copy.Box);
             copy.Box = ValidFace(copy.Box, copy.Face) && !copy.Edge ? copy.Box : -1;
             Subdivisions.Add(copy);
         }
@@ -237,6 +243,7 @@ public class World
             }
 
             EllipseState ellipseCopy = ellipse.Clone();
+            ellipseCopy.Box = RemapBox(boxIndex, ellipseCopy.Box);
             ellipseCopy.Box = ValidFace(ellipseCopy.Box, ellipseCopy.Face) ? ellipseCopy.Box : -1;
             Ellipses.Add(ellipseCopy);
         }
@@ -245,6 +252,11 @@ public class World
         Reference = NormalizeReference(state.Reference, out _);
         SelectionIdx = -1;
         BumpRevision();
+    }
+
+    private static int RemapBox(List<int> boxIndex, int box)
+    {
+        return box >= 0 && box < boxIndex.Count ? boxIndex[box] : -1;
     }
 
     // View state: saved in the file, but never in undo and never a reason to ask before closing.
@@ -308,19 +320,19 @@ public class World
     {
         if (ReferenceEquals(BackgroundImg, image))
         {
+            // Nothing to remove: the document does not change, but a later image starts shown.
             if (image == null)
             {
                 Reference.Hidden = false;
-                BumpRevision();
             }
 
             return;
         }
 
-        if (image != null && (long)image.PixelSize.Width * image.PixelSize.Height > MaxDecodedImagePixels)
+        if (image != null && ImageRefusal(image) is { } refusal)
         {
             image.Dispose();
-            SetError("Image refused: larger than 40 megapixels.");
+            SetError(refusal);
             return;
         }
 
@@ -329,6 +341,45 @@ public class World
         ReleaseImage(previous);
         Reference.Hidden = false;
         BumpRevision();
+    }
+
+    private Bitmap? _imageAccepted;
+
+    // Why an image cannot be the reference, or null. Save embeds it as PNG, so an image that loads
+    // but does not save is refused here. The encode is slow on a large image: the last image passed
+    // is remembered, so a check before the undo step and the set after it encode once.
+    public string? ImageRefusal(Bitmap image)
+    {
+        if (ReferenceEquals(image, _imageAccepted))
+        {
+            return null;
+        }
+
+        if ((long)image.PixelSize.Width * image.PixelSize.Height > MaxDecodedImagePixels)
+        {
+            return "Image refused: larger than 40 megapixels.";
+        }
+
+        if (!FitsInProject(EncodePng(image).LongLength))
+        {
+            return "Image refused: over 64 MB as PNG, too large to save in a project. Use a smaller image.";
+        }
+
+        _imageAccepted = image;
+        return null;
+    }
+
+    public static byte[] EncodePng(Bitmap image)
+    {
+        using var stream = new MemoryStream();
+        image.Save(stream);
+        return stream.ToArray();
+    }
+
+    // The project stores the PNG as base64.
+    public static bool FitsInProject(long pngBytes)
+    {
+        return (pngBytes + 2) / 3 * 4 <= MaxEncodedImageBytes;
     }
 
     // Read the size from the header first: a small, compressible file can decode to gigabytes.
@@ -385,9 +436,9 @@ public class World
         BumpRevision(false);
     }
 
-    public Styles StylesAt(double zoom)
+    public Styles StylesAt(double zoom, bool export = false)
     {
-        return new Styles(ActivePalette, zoom);
+        return new Styles(ActivePalette, zoom, export);
     }
 
     public void ZoomChanged()
@@ -549,6 +600,14 @@ public class World
 
     public void ResetDocument(int width, int height)
     {
+        SetDocumentSize(width, height);
+        Reference.Hidden = false;
+        BumpRevision();
+    }
+
+    // No revision bump: Restore bumps once, when the whole state is in place.
+    private void SetDocumentSize(int width, int height)
+    {
         width = Math.Clamp(width, MinDocumentSize, MaxDocumentSize);
         height = Math.Clamp(height, MinDocumentSize, MaxDocumentSize);
         PicturePlaneWidth = width;
@@ -556,7 +615,19 @@ public class World
         PicturePlaneWidthHalf = width / 2;
         PicturePlaneHeightHalf = height / 2;
         CrazyFar = (width > height ? width : height) * 32;
-        Reference.Hidden = false;
-        BumpRevision();
+    }
+
+    // Where the two trace lines cross, as drawn (lines without ends); null for fewer than two, or parallel.
+    public Vec2? TraceCrossing()
+    {
+        if (TraceLines.Count < 2)
+        {
+            return null;
+        }
+
+        TraceLine first = TraceLines[0];
+        TraceLine second = TraceLines[1];
+        return Geom.IntersectLines(first.Start, (first.End - first.Start).Normalized(), second.Start,
+            (second.End - second.Start).Normalized(), out Vec2 crossing) ? crossing : null;
     }
 }
