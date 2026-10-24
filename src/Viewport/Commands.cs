@@ -72,6 +72,8 @@ public static class Commands
             new("Right drag", "Create a trace line (2 max; T tool: left drag)"),
             new("+ Ctrl", "Snap to 5 degree increments", 32),
             new("+ Shift", "Snap to 15 degree increments", 32),
+            new("Alt + drag", "Move the reference image"),
+            new("Alt + wheel", "Scale the reference image"),
             new(" ", " "),
             new("In the box tool", " "),
             new("1 / 2", "During the first drag: follow point 1 or 2", 32),

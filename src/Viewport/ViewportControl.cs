@@ -113,6 +113,11 @@ public class ViewportControl : Control
         {
             mode = new CameraMode(World);
         }
+        else if (kind == PointerUpdateKind.LeftButtonPressed && e.KeyModifiers == KeyModifiers.Alt &&
+                 ReferenceShown)
+        {
+            mode = new ReferenceMode(World, () => PushUndo("Move reference"));
+        }
         else if (kind == PointerUpdateKind.LeftButtonPressed && _construction != null)
         {
             _construction.Begin(position, _mouseWorld, e.KeyModifiers);
@@ -229,7 +234,14 @@ public class ViewportControl : Control
         base.OnPointerWheelChanged(e);
         Point position = e.GetPosition(this);
         Vector delta = e.Delta;
-        if ((e.KeyModifiers & KeyModifiers.Control) != 0)
+        if (e.KeyModifiers == KeyModifiers.Alt && ReferenceShown)
+        {
+            if (delta.Y != 0)
+            {
+                ChangeReference("Scale reference", settings => settings.Scale *= Math.Pow(1.1, delta.Y));
+            }
+        }
+        else if ((e.KeyModifiers & KeyModifiers.Control) != 0)
         {
             if (delta.Y == 0)
             {
@@ -408,9 +420,21 @@ public class ViewportControl : Control
         OnAsync("Paste reference image", new[] { K(Key.V, ctrl) }, PasteBackgroundAsync);
         On("Show / hide reference", new[] { K(Key.I) }, ToggleReference);
         On("Remove reference", new[] { K(Key.I, alt) }, RemoveReference);
-        OnAsync("Reference settings...", new[] { K(Key.I, ctrl | alt) }, ShowReferenceDialogAsync);
-        On("Lower reference opacity", WithShift(Key.OemOpenBrackets), () => ChangeReferenceOpacity(-0.1));
-        On("Raise reference opacity", WithShift(Key.OemCloseBrackets), () => ChangeReferenceOpacity(0.1));
+        On("Lower reference opacity", WithShift(Key.OemOpenBrackets), () => ChangeReference("Reference opacity",
+            settings => settings.Opacity -= 0.1));
+        On("Raise reference opacity", WithShift(Key.OemCloseBrackets), () => ChangeReference("Reference opacity",
+            settings => settings.Opacity += 0.1));
+        Sep();
+        On("Flip reference horizontally", Array.Empty<KeyGesture>(), () => ChangeReference("Flip reference",
+            settings => settings.FlipH = !settings.FlipH));
+        On("Flip reference vertically", Array.Empty<KeyGesture>(), () => ChangeReference("Flip reference",
+            settings => settings.FlipV = !settings.FlipV));
+        On("Fit reference to plane", Array.Empty<KeyGesture>(), () => ChangeReference("Fit reference to plane",
+            settings =>
+            {
+                settings.Scale = 1;
+                settings.Offset = new Vec2();
+            }));
 
         Group("Camera");
         for (int points = 1; points <= 3; points++)
@@ -925,60 +949,26 @@ public class ViewportControl : Control
         InvalidateVisual();
     }
 
-    private void ChangeReferenceOpacity(double delta)
+    private bool ReferenceShown => World.BackgroundImg != null && !World.Reference.Hidden;
+
+    // One undo step per run of the same change: a burst of wheel ticks or [ ] presses undoes at once.
+    private void ChangeReference(string name, Action<ReferenceSettings> change)
     {
+        if (World.BackgroundImg == null)
+        {
+            World.SetStatus($"{name}: load or paste a reference image first.");
+            return;
+        }
+
+        if (History.UndoName != name)
+        {
+            PushUndo(name);
+        }
+
         ReferenceSettings next = World.Reference.Clone();
-        next.Opacity += delta;
+        change(next);
         World.SetReferenceSettings(next);
         InvalidateVisual();
-    }
-
-    public async Task ShowReferenceDialogAsync()
-    {
-        ReferenceSettings? initial = null;
-        bool wasDirty = World.IsDirty;
-        // The dialog applies changes live; Cancel puts back the settings and the saved state.
-        void Revert()
-        {
-            if (initial != null && !World.Reference.ContentEquals(initial))
-            {
-                World.SetReferenceSettings(initial);
-            }
-
-            if (!wasDirty)
-            {
-                World.MarkSaved();
-            }
-        }
-
-        try
-        {
-            if (TopLevel.GetTopLevel(this) is not Window owner)
-            {
-                return;
-            }
-
-            WorldState before = World.Capture();
-            initial = World.Reference.Clone();
-            var dialog = new ReferenceDialog(World, InvalidateVisual);
-            if (await dialog.ShowDialog<bool>(owner))
-            {
-                History.Push(before, "Reference settings...");
-            }
-            else
-            {
-                Revert();
-            }
-        }
-        catch (Exception exception)
-        {
-            Revert();
-            World.SetError($"Reference settings failed: {exception.Message}");
-        }
-        finally
-        {
-            InvalidateVisual();
-        }
     }
 
     public void RemoveReference()
@@ -1149,6 +1139,7 @@ public class ViewportControl : Control
         OnKeyDown(e);
     }
 
+    // The reference image stays: it is fitted to the new plane.
     private async Task ResizeDocumentAsync()
     {
         try
@@ -1167,7 +1158,6 @@ public class ViewportControl : Control
             PushUndo("Resize document...");
             ExitTool();
             World.ResetDocument(dialog.NewWidth, dialog.NewHeight);
-            World.SetReferenceImage(null);
             CenterCamera();
             InvalidateVisual();
         }
@@ -1189,7 +1179,7 @@ public class ViewportControl : Control
         IReadOnlyList<IStorageFile> files = await topLevel.StorageProvider.OpenFilePickerAsync(
             new FilePickerOpenOptions
             {
-                Title = "Load Background Image",
+                Title = "Load Reference Image",
                 AllowMultiple = false,
                 FileTypeFilter = new[]
                 {
@@ -1221,25 +1211,32 @@ public class ViewportControl : Control
 
             using var buffer = new MemoryStream();
             await stream.CopyToAsync(buffer);
-            Bitmap bitmap = World.DecodeImage(buffer.ToArray());
-
-            PushUndo("Load reference image...");
-            ExitTool();
-            World.SetReferenceImage(bitmap);
-            if (!ReferenceEquals(World.BackgroundImg, bitmap))
-            {
-                InvalidateVisual();
-                return;
-            }
-
-            World.ResetDocument(bitmap.PixelSize.Width, bitmap.PixelSize.Height);
-            CenterCamera();
+            UseReferenceImage(World.DecodeImage(buffer.ToArray()), "Load reference image...");
         }
         catch (Exception exception)
         {
             World.SetError($"Could not load image: {exception.Message}");
         }
 
+        InvalidateVisual();
+    }
+
+    // A new reference is fitted inside the plane; the document keeps its size.
+    internal void UseReferenceImage(Bitmap bitmap, string name)
+    {
+        if ((long)bitmap.PixelSize.Width * bitmap.PixelSize.Height > World.MaxDecodedImagePixels)
+        {
+            bitmap.Dispose();
+            World.SetError("Image refused: larger than 40 megapixels.");
+            InvalidateVisual();
+            return;
+        }
+
+        PushUndo(name);
+        ExitTool();
+        World.SetReferenceImage(bitmap);
+        World.SetReferenceSettings(new ReferenceSettings { Opacity = World.Reference.Opacity });
+        World.SetStatus("Alt + drag moves the reference, Alt + wheel scales it, [ and ] set its opacity.");
         InvalidateVisual();
     }
 
@@ -1259,24 +1256,7 @@ public class ViewportControl : Control
             return;
         }
 
-        if ((long)bitmap.PixelSize.Width * bitmap.PixelSize.Height > World.MaxDecodedImagePixels)
-        {
-            bitmap.Dispose();
-            World.SetError("Image refused: larger than 40 megapixels.");
-            InvalidateVisual();
-            return;
-        }
-
-        PushUndo("Paste reference image");
-        ExitTool();
-        World.SetReferenceImage(bitmap);
-        if (ReferenceEquals(World.BackgroundImg, bitmap))
-        {
-            World.ResetDocument(bitmap.PixelSize.Width, bitmap.PixelSize.Height);
-            CenterCamera();
-        }
-
-        InvalidateVisual();
+        UseReferenceImage(bitmap, "Paste reference image");
     }
 
     private async Task CopyPlaneAsync()

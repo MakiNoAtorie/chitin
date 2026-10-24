@@ -507,7 +507,7 @@ internal static class SelfTest
             Check("tool_pick_quad", ToolPickQuad());
             Check("density_clamp", DensityClamped());
             Check("image_header_guard", ImageHeaderGuard());
-            Check("reference_cancel_clean", ReferenceCancelClean());
+            Check("reference_direct", ReferenceDirect());
             Check("key_modifiers", KeyModifiersExact());
             bool newerRefused;
             try
@@ -1324,26 +1324,41 @@ internal static class SelfTest
             world.StatusMessage?.StartsWith("Trace lines do not cross") == true;
     }
 
-    private static bool ReferenceCancelClean()
+    // A new reference keeps the document size and is fitted; Alt + drag moves it and Alt + wheel
+    // scales it, each burst one undo step.
+    private static bool ReferenceDirect()
     {
         var viewport = new ViewportControl();
-        var window = new Window { Content = viewport };
+        var window = new Window { Width = 800, Height = 600, Content = viewport };
         window.Show();
+        Dispatcher.UIThread.RunJobs();
         try
         {
-            viewport.World.MarkSaved();
-            Task dialog = viewport.ShowReferenceDialogAsync();
-            Slider opacity = window.OwnedWindows.Single().GetLogicalDescendants().OfType<Slider>()
-                .Single(slider => slider.Name == "OpacitySlider");
-            opacity.Value = 40;
-            bool live = viewport.World.IsDirty && Math.Abs(viewport.World.Reference.Opacity - 0.4) < 1e-9;
-            CloseDialogs(window);
-            return live && dialog.IsCompleted && !viewport.World.IsDirty &&
-                viewport.World.Reference.Opacity == 1 && !viewport.History.CanUndo;
+            World world = viewport.World;
+            world.Reference.Scale = 2;
+            viewport.UseReferenceImage(TestBitmap(), "Paste reference image");
+            bool kept = world.PicturePlaneWidth == 640 && world.PicturePlaneHeight == 480 &&
+                world.Reference.Scale == 1 && world.BackgroundImg != null;
+            Rect fitted = Renderer.ReferenceRect(new Size(2, 2), GuideBuilder.PlaneRect(world));
+            bool fit = fitted == new Rect(-240, -240, 480, 480);
+
+            Point centre = new(world.Camera.X * world.Zoom, world.Camera.Y * world.Zoom);
+            window.MouseDown(centre, MouseButton.Left, RawInputModifiers.Alt);
+            window.MouseMove(new Point(centre.X + 20, centre.Y), RawInputModifiers.Alt);
+            window.MouseUp(new Point(centre.X + 20, centre.Y), MouseButton.Left, RawInputModifiers.Alt);
+            bool moved = world.Reference.Offset.X > 0 && world.VanishingPoints[0] == null &&
+                viewport.History.UndoName == "Move reference";
+
+            double zoom = world.Zoom;
+            window.MouseWheel(centre, new Vector(0, 1), RawInputModifiers.Alt);
+            window.MouseWheel(centre, new Vector(0, 1), RawInputModifiers.Alt);
+            bool scaled = Math.Abs(world.Reference.Scale - 1.21) < 1e-9 && world.Zoom == zoom;
+            viewport.Undo();
+            bool oneStep = world.Reference.Scale == 1 && world.Reference.Offset.X > 0;
+            return kept && fit && moved && scaled && oneStep;
         }
         finally
         {
-            CloseDialogs(window);
             window.Close();
         }
     }

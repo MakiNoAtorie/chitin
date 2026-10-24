@@ -171,3 +171,35 @@ internal sealed class TraceLineMode : MouseMode
             new Point(_traceLine.End.X, _traceLine.End.Y));
     }
 }
+
+// Alt + left drag: move the reference image. One undo step on the first real move.
+internal sealed class ReferenceMode : MouseMode
+{
+    private readonly Action _pushUndo;
+    private bool _pushed;
+
+    public ReferenceMode(World world, Action pushUndo) : base(world)
+    {
+        _pushUndo = pushUndo;
+    }
+
+    public override void MouseMoved(Point screen, Vec2 world, KeyModifiers modifiers)
+    {
+        base.MouseMoved(screen, world, modifiers);
+        if (MoveDelta == default)
+        {
+            return;
+        }
+
+        if (!_pushed)
+        {
+            _pushUndo();
+            _pushed = true;
+        }
+
+        ReferenceSettings next = World.Reference.Clone();
+        next.Offset = new Vec2(next.Offset.X + MoveDelta.X / World.Zoom, next.Offset.Y + MoveDelta.Y / World.Zoom);
+        World.SetReferenceSettings(next);
+        MoveDelta = new Vec2();
+    }
+}

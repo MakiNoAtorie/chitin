@@ -99,9 +99,18 @@ public static class Renderer
             using (context.PushTransform(Matrix.CreateScale(scaleX, scaleY) *
                 Matrix.CreateTranslation(reference.Offset.X, reference.Offset.Y)))
             {
-                context.DrawImage(image, plane);
+                context.DrawImage(image, ReferenceRect(image.Size, plane));
             }
         }
+    }
+
+    // Scale 1 fits the whole image inside the plane, centred, keeping its aspect ratio.
+    internal static Rect ReferenceRect(Size image, Rect plane)
+    {
+        double fit = Math.Min(plane.Width / image.Width, plane.Height / image.Height);
+        double width = image.Width * fit;
+        double height = image.Height * fit;
+        return new Rect(plane.Center.X - width / 2, plane.Center.Y - height / 2, width, height);
     }
 
     internal static void DrawPrims(DrawingContext context, IReadOnlyList<Prim> prims, RenderMode mode)
