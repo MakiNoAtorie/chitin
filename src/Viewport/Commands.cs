@@ -81,6 +81,8 @@ public static class Commands
             new("1 / 2", "While setting the width: run it toward point 1 or 2", 32),
             new("In the subdivision tool", " "),
             new("2-9  + / -", "Cells of the last subdivision (with Shift: rows only)", 32),
+            new("In the ellipse tool", " "),
+            new("3 clicks", "Box face (or four corners), centre, radius (drags work too)", 32),
             new("In a tool", " "),
             new("Backspace", "Cancel, or delete its last shape", 32)
         };

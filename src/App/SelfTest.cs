@@ -487,6 +487,7 @@ internal static class SelfTest
             Check("view_state_outside_undo", ViewStateOutsideUndo());
             Check("boxes_follow_points", BoxesFollowPoints());
             Check("box_by_clicks", BoxByClicks());
+            Check("ellipse_by_clicks", EllipseByClicks());
             Check("menu_gestures", MenuGesturesBound());
             Check("window_keys_once", WindowKeysRunOnce());
             Check("menu_state", MenuState());
@@ -1339,6 +1340,54 @@ internal static class SelfTest
         }
     }
 
+    // The ellipse tool by clicks alone: four corners, the centre, then the radius, the preview
+    // following the pointer. A still click sets no radius; the radius is in the face's unit square.
+    // The foot names each step.
+    private static bool EllipseByClicks()
+    {
+        var viewport = new ViewportControl();
+        var window = new Window { Width = 900, Height = 700, Content = viewport };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            World world = viewport.World;
+            Point Screen(double x, double y) =>
+                new((x + world.Camera.X) * world.Zoom, (y + world.Camera.Y) * world.Zoom);
+            void Click(double x, double y)
+            {
+                window.MouseMove(Screen(x, y));
+                window.MouseDown(Screen(x, y), MouseButton.Left);
+                window.MouseUp(Screen(x, y), MouseButton.Left);
+            }
+
+            bool Step(string prefix) => viewport.ToolStepHint?.StartsWith(prefix) == true;
+            viewport.ProcessKey(new KeyEventArgs { Key = Key.E });
+            bool pick = Step("Ellipse 1 of 3");
+            Click(-100, -100);
+            Click(100, -100);
+            bool counting = Step("Ellipse 1 of 3: corner 3 of 4");
+            Click(100, 100);
+            Click(-100, 100);
+            bool centreStep = Step("Ellipse 2 of 3");
+            Click(0, 0);
+            bool radiusStep = Step("Ellipse 3 of 3") && world.Ellipses.Count == 0;
+            Click(1, 0);
+            bool stillClick = world.Ellipses.Count == 0 && Step("Ellipse 3 of 3");
+            window.MouseMove(Screen(50, 0));
+            bool previewOnly = world.Ellipses.Count == 0;
+            Click(50, 0);
+            bool made = world.Ellipses.Count == 1 && Math.Abs(world.Ellipses[0].Cx - 0.5) < 1e-9 &&
+                Math.Abs(world.Ellipses[0].Cy - 0.5) < 1e-9 && Math.Abs(world.Ellipses[0].R - 0.25) < 1e-9 &&
+                viewport.History.UndoName == "Ellipse tool" && Step("Ellipse 1 of 3");
+            return pick && counting && centreStep && radiusStep && stillClick && previewOnly && made;
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     // A box built with the tool lies on its point rays and follows the points when they move, and
     // so does a subdivision on its face; the links survive a save, and removing the box detaches it.
     private static bool BoxesFollowPoints()
@@ -1980,6 +2029,16 @@ internal static class SelfTest
             ClickAt(farCorner);
             window.MouseMove(At(farCorner + new Vec2(0, -70)));
             Capture(window, Path.Combine(directory, "window-box-height.png"));
+
+            // Then an ellipse on the box's front-left side, captured while its radius follows the pointer.
+            ClickAt(farCorner + new Vec2(0, -70));
+            viewport.ProcessKey(new KeyEventArgs { Key = Key.E });
+            Vec2[] side = BoxGeometry.Build(world.Boxes[0], world.VanishingPoints).Faces[2];
+            Vec2 middle = Average(side);
+            ClickAt(middle);
+            ClickAt(middle);
+            window.MouseMove(At((middle + side[1]) * 0.5));
+            Capture(window, Path.Combine(directory, "window-ellipse-radius.png"));
             viewport.ProcessKey(new KeyEventArgs { Key = Key.Escape });
 
             viewport.NewDocument();

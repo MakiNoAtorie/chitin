@@ -27,8 +27,8 @@ public partial class MainWindow
             ToolKind.Box),
         new("D", "Subdivide", "D", "Click a box face or four corners, then 2-9 cells", "Subdivision tool",
             ToolKind.Subdivision),
-        new("E", "Ellipse", "E", "Click a box face or four corners, then drag the radius", "Ellipse tool",
-            ToolKind.Ellipse)
+        new("E", "Ellipse", "E", "Click a box face or four corners, then click the centre and the radius",
+            "Ellipse tool", ToolKind.Ellipse)
     };
 
     private const string PointColumns = "40,*,*,4,22,36,22,26";
@@ -51,7 +51,7 @@ public partial class MainWindow
             ToolKind.Trace => "Drag to pull a trace line (two at most) · Ctrl snaps to 5°, Shift to 15° · Esc leaves",
             ToolKind.Box => "Click the first corner, then click width, depth and height · Esc leaves",
             ToolKind.Subdivision => "Click a box face or four corners · 2-9 set its cells (Shift: rows) · Esc leaves",
-            ToolKind.Ellipse => "Click a box face or four corners, then drag from the centre · Esc leaves",
+            ToolKind.Ellipse => "Click a box face or four corners, then click the centre and the radius · Esc leaves",
             _ => "Click to place a point · drag a point to move it · right-drag pulls a trace line · " +
                  "Space+drag pans, Ctrl+Space+drag zooms"
         };

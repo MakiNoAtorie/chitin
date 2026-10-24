@@ -379,13 +379,20 @@ internal sealed class BoxTool : ConstructionMode
     }
 }
 
+// Three steps: a box face (or four corners), the centre, the radius. Each click sets the current
+// step and the preview follows the pointer between clicks, so clicks and drags both work: a drag
+// from the centre sets the radius where it ends. Centre and radius are kept in the face's
+// unit-square coordinates, so the ellipse lies in the face's plane.
 internal sealed class EllipseTool : ConstructionMode
 {
+    // A shorter move is a click, and a shorter radius is no radius, in screen pixels.
+    private const double MinPixels = 4;
+
     private Vec2[]? _quad;
     private Homography _homography;
-    private Vec2 _centre;
-    private double _radius;
-    private bool _radiusDrag;
+    private Vec2? _centre;
+    private bool _placing;
+    private Point _press;
     private int _box = -1;
     private int _face;
 
@@ -395,68 +402,67 @@ internal sealed class EllipseTool : ConstructionMode
 
     public override ToolKind Kind => ToolKind.Ellipse;
 
-    public override string? Hint => _quad != null
-        ? "Ellipse: drag from the centre to set the radius · Backspace restarts"
-        : base.Hint;
+    public override string? Hint => _quad == null
+        ? Corners.Count > 0
+            ? $"Ellipse 1 of 3: corner {Corners.Count + 1} of 4 · Backspace restarts"
+            : "Ellipse 1 of 3: click a box face, or click four corners · Esc leaves"
+        : _centre == null
+            ? "Ellipse 2 of 3: click the centre, or drag out the radius · Backspace restarts"
+            : "Ellipse 3 of 3: move out, click to set the radius · Backspace restarts";
 
     public override void Begin(Point screen, Vec2 world, KeyModifiers modifiers)
     {
         base.Begin(screen, world, modifiers);
+        _press = screen;
         if (_quad == null)
         {
             if (PickQuad(world) is { } quad)
             {
                 SelectQuad(quad);
             }
-
-            return;
         }
-
-        if (_radiusDrag || _homography.MapInverse(world) is not { } centre)
+        else if (_centre == null && _homography.MapInverse(world) is { } centre)
         {
-            return;
-        }
-
-        _centre = centre;
-        _radius = 0;
-        _radiusDrag = true;
-    }
-
-    public override void MouseMoved(Point screen, Vec2 world, KeyModifiers modifiers)
-    {
-        base.MouseMoved(screen, world, modifiers);
-        if (_radiusDrag && _homography.MapInverse(world) is { } point)
-        {
-            _radius = _centre.DistFrom(point);
+            _centre = centre;
+            _placing = true;
         }
     }
 
     public override void MouseUp()
     {
         base.MouseUp();
-        if (!_radiusDrag || _quad == null)
+        if (_quad is not { } quad || _centre is not { } centre)
         {
             return;
         }
 
-        if (_radius > 1e-6)
+        // The press that placed the centre: a click waits for the radius click.
+        if (_placing)
         {
-            PushUndo();
-            World.AddEllipse(new EllipseState
+            _placing = false;
+            if (new Vec2(_press.X, _press.Y).DistFrom(LastScreen) < MinPixels)
             {
-                Quad = _quad,
-                Cx = _centre.X,
-                Cy = _centre.Y,
-                R = _radius,
-                Box = _box,
-                Face = _face
-            });
-            _quad = null;
-            Corners.Clear();
+                return;
+            }
         }
 
-        _radius = 0;
-        _radiusDrag = false;
+        if (Radius() is not { } radius ||
+            _homography.Map(centre.X, centre.Y).DistFrom(CurrentWorld) * World.Zoom < MinPixels)
+        {
+            return;
+        }
+
+        PushUndo();
+        World.AddEllipse(new EllipseState
+        {
+            Quad = quad,
+            Cx = centre.X,
+            Cy = centre.Y,
+            R = radius,
+            Box = _box,
+            Face = _face
+        });
+        Restart();
     }
 
     public override bool HandleKey(Key key, KeyModifiers modifiers)
@@ -465,10 +471,7 @@ internal sealed class EllipseTool : ConstructionMode
         {
             if (_quad != null || Corners.Count > 0)
             {
-                _quad = null;
-                Corners.Clear();
-                _radius = 0;
-                _radiusDrag = false;
+                Restart();
             }
             else if (World.Ellipses.Count > 0)
             {
@@ -484,28 +487,39 @@ internal sealed class EllipseTool : ConstructionMode
 
     public override void DrawOver(DrawingContext context)
     {
-        Rect plane = GuideBuilder.PlaneRect(World);
-        var prims = new List<Prim>();
-        if (_quad is { } quad)
-        {
-            prims.Add(Prim.Poly(World.Styles.ConstructionPreviewPen, null, quad, true, plane));
-            if (_radiusDrag && _radius > 0)
-            {
-                GuideBuilder.AddEllipse(prims, World, World.Styles, new EllipseState
-                {
-                    Quad = quad,
-                    Cx = _centre.X,
-                    Cy = _centre.Y,
-                    R = _radius
-                }, World.Styles.ConstructionPreviewPen, plane);
-            }
-        }
-        else
+        if (_quad is not { } quad)
         {
             DrawCorners(context);
+            return;
+        }
+
+        Rect plane = GuideBuilder.PlaneRect(World);
+        var prims = new List<Prim> { Prim.Poly(World.Styles.ConstructionPreviewPen, null, quad, true, plane) };
+        if (_centre is { } centre && Radius() is { } radius && radius > 0)
+        {
+            GuideBuilder.AddEllipse(prims, World, World.Styles, new EllipseState
+            {
+                Quad = quad,
+                Cx = centre.X,
+                Cy = centre.Y,
+                R = radius
+            }, World.Styles.ConstructionPreviewPen, plane);
         }
 
         Draw(prims, context);
+        if (_centre is { } dot)
+        {
+            context.DrawEllipse(World.Styles.VPFill[0], World.Styles.BoxEdgePen,
+                ToPoint(_homography.Map(dot.X, dot.Y)), 3.0 / World.Zoom, 3.0 / World.Zoom);
+        }
+    }
+
+    // The pointer's distance from the centre, in the face's unit square.
+    private double? Radius()
+    {
+        return _centre is { } centre && _homography.MapInverse(CurrentWorld) is { } point
+            ? centre.DistFrom(point)
+            : null;
     }
 
     private void SelectQuad(Vec2[] quad)
@@ -523,6 +537,13 @@ internal sealed class EllipseTool : ConstructionMode
         _face = PickedFace;
     }
 
+    private void Restart()
+    {
+        _quad = null;
+        _centre = null;
+        _placing = false;
+        Corners.Clear();
+    }
 }
 
 // A pick (box face or four corners) adds the subdivision at once; 2-9 and + / - then change the

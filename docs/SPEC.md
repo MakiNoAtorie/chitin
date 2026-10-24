@@ -267,9 +267,12 @@ tool no longer makes them.
 
 ## 7.3 Ellipse in a plane (Wave 2)
 
-`E` toggles ellipse mode. Click a box face or four corners, then drag from the centre to set the
-radius; `Backspace` cancels a pending selection first, then deletes the last ellipse; `Escape`
-leaves the tool. The ellipse is stored as
+`E` toggles ellipse mode. Three steps: click a box face (or four corners), click the centre, then
+move out and click to set the radius. Between clicks the preview follows the pointer and the foot
+names the step (`Ellipse 3 of 3: …`). Drags work too: a drag from the centre sets the radius where
+it ends. A press that moves less than 4 px is a click, and a radius under 4 px on screen sets
+nothing and waits (`CHECK ellipse_by_clicks`). `Backspace` restarts a pending ellipse first, then
+deletes the last ellipse; `Escape` leaves the tool. The ellipse is stored as
 the face quad plus a centre and radius in unit-square coordinates, so it survives save/load and
 resizes. Drawing samples the inscribed unit circle at 128 parameters and maps each sample through
 the same homography as the subdivision, emitting a closed polyline. For a screen-parallel square
@@ -400,7 +403,7 @@ Keyboard (surface focused):
   and a transparent-background checkbox for PNG. Width and height are linked to the plane's aspect
   ratio (the longer side is capped at 8192; `CHECK export_aspect`).
 - `B`, `D`, `E` toggle the box, subdivision and ellipse tools (§7.1–7.3), `T` the trace tool.
-  `E` (ellipse): click a face or four corners, then drag from the centre to set the radius; an
+  `E` (ellipse): click a face or four corners, then click the centre and the radius (§7.3); an
   ellipse picked from a box face follows the box; `Backspace` cancels a pending selection first,
   then deletes the last ellipse.
 - Four clicked corners must form a convex shape in click order; a bow-tie or dented shape is
@@ -523,9 +526,9 @@ for the construction scene):
   The UX pass adds `CHECK pointer_navigation`, `CHECK stylus_zoom`, `CHECK error_persists`,
   `CHECK ctrl_k_toggles_points`,
   `CHECK points_panel_edits`, `CHECK click_places_points`, `CHECK view_state_outside_undo`,
-  `CHECK reference_direct`, `CHECK boxes_follow_points` and `CHECK box_by_clicks` (each described where its behaviour is).
+  `CHECK reference_direct`, `CHECK boxes_follow_points`, `CHECK box_by_clicks` and `CHECK ellipse_by_clicks` (each described where its behaviour is).
   The self-test also writes the real window, headless, to `screens/` next to `<path>` (each palette,
-  Find open, a following 3-point box after its point moved, the box tool mid-build, and an empty document at fit and zoomed out) for review. The `-shapes` PNG contains stacked boxes, a subdivided face and an
+  Find open, a following 3-point box after its point moved, the box and ellipse tools mid-build, and an empty document at fit and zoomed out) for review. The `-shapes` PNG contains stacked boxes, a subdivided face and an
   ellipse; the interactive and export PNGs move when the palette changes.
 
 The operator will inspect all three PNGs. Do not stub rendering, do not catch and swallow errors.
