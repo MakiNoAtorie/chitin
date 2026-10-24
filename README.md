@@ -36,50 +36,47 @@ dotnet publish -c Release -r osx-x64     --self-contained true -p:PublishSingleF
 
 ## Controls
 
-Press `F1` in the app for the full in-window list, or `Ctrl+F` to find any command by name. The
-essentials:
+Press `F1` in the app for every key and gesture, or `Ctrl+F` to find any command by name. Every
+menu item shows its shortcut. The essentials:
 
-- `Ctrl+K` switches the window between the compact sheet (rulers, tool tray, notes, title block)
-  and the detailed panels (inspector, tool options, editable zoom and density). Every launch
-  starts compact.
-- `Ctrl+F` focuses Find in the menu bar: type words of a command name, `Up`/`Down`, `Enter` runs,
-  `Escape` closes. Click an index tab on a ruler to select that vanishing point.
-
-- `1`–`9` drop a vanishing point at the cursor; `Ctrl+1`–`9` select one; `Alt+1`–`9` delete one.
-- `Ctrl+Shift+1`–`9` drop a point where the two trace lines cross.
-- Left-drag a point to move it, middle-drag to pan, wheel to zoom, right-drag to pull a trace line
-  (`Ctrl` snaps 5°, `Shift` snaps 15°).
-- `G` grid, `Ctrl+G` grid style, `+`/`-` grid size, `H` level points 1 and 2.
-- `S` rotate the palette assignment, `Ctrl+Shift+P` cycle palettes (ink / atelier / charcoal); new
-  documents start on ink, and the whole window takes the palette's colours.
-- `V` cone of vision and station point; Camera menu has 1-/2-/3-point presets and saved rigs.
-- `B` box tool: three drags set width, depth and height (`1`/`2` force an axis, `Backspace` deletes
-  the last box, `Escape` leaves the tool).
-- `D` subdivision tool: click a box face or four corners, `2`–`9` set cells per axis, `Enter`
-  commits; `Shift` at the first click subdivides a receding edge instead.
-- `E` ellipse tool: click a box face or four corners, then drag from the centre to set the radius.
-- `Ctrl+C` copy the plane (`Ctrl+Shift+C` grayscale), `Ctrl+V` paste an image, `Ctrl+I` load one,
-  `I` toggle it, `Alt+I` remove it.
-- `Ctrl+N` new document, `Ctrl+R` clear it, `Ctrl+Alt+C` resize it, `Home` recentre, `Escape`
-  deselect. Every menu item shows its shortcut.
+- **Points** (`P`, the default tool): click the empty plane to place the next point, drag a point to
+  move it. `1`-`9` drop a point at the cursor, `Ctrl+1`-`9` select, `Alt+1`-`9` or `Delete` delete,
+  `Up`/`Down` change the selected point's density, `H` levels points 1 and 2. Camera menu: 1-, 2-
+  and 3-point presets.
+- **Points panel** (right; `Ctrl+K` hides it): type a point's X and Y, step its density, delete it.
+- **Navigate**: wheel or two-finger scroll pans, `Ctrl`+wheel or pinch zooms, `Space`+drag or
+  middle-drag pans, `Home` fits the plane.
+- **Trace lines**: `T` and drag, or right-drag in any tool (`Ctrl` snaps 5°, `Shift` 15°).
+  `Ctrl+Shift+1`-`9` drops a point where the two lines cross. `Backspace` deletes the last line.
+- **Box** (`B`): three drags set width, depth and height along the vanishing points (`1`/`2` force
+  an axis). Boxes follow their points when you move them.
+- **Subdivide** (`D`): click a box face or four corners; `2`-`9` set the cells of the one just made.
+- **Ellipse** (`E`): click a box face or four corners, then drag from the centre.
+- `Backspace` in a tool deletes its last shape; `Escape` leaves the tool.
+- **Reference image**: `Ctrl+I` load, `Ctrl+V` paste (fitted to the plane), `Alt`+drag move,
+  `Alt`+wheel scale, `[`/`]` opacity, `I` show or hide, `Alt+I` remove.
+- **View**: `G` grid, `+`/`-` grid size, `V` cone of vision and station point, `Ctrl+Shift+P` dark
+  palette. These are view settings: saved with the project, but not undone and never a reason to
+  ask before closing.
+- **File**: `Ctrl+N` new, `Ctrl+O` open, `Ctrl+S` save, `Ctrl+E` export SVG or PNG,
+  `Ctrl+Shift+C` copy the plane as an image, `Ctrl+Shift+R` resize. Edit > Clear document asks
+  first. Closing with unsaved changes offers Save, Don't save and Cancel.
 
 ## Verified
 
 - `dotnet build -c Release`: 0 warnings, 0 errors.
-- `--selftest`: renders the 1400x900 viewport, the 640x480 export and the construction-shapes
-  scene, and prints every `CHECK ... PASS` before `SELFTEST_OK`.
-- Interactive smoke test on X11 (before the polish stage): window, Help > About, Ctrl+N resize
-  dialog, Escape to cancel, dropping points 1/3/7, help overlay.
-- Polish stage: the self-test also renders the real window headless into `.verify/screens/`
-  (3 palettes × compact and detailed, Find open); copies are in `docs/polish stage/screens/`.
-- Clipboard, file picker and macOS/Windows runtime behaviour were not exercised on this host (no
-  display server, Linux only); they compile against the documented Avalonia APIs.
+- `dev-docs/verify.sh`: the build, the self-test (every `CHECK ... PASS`, then `SELFTEST_OK`) and
+  the command-line contract.
+- `--selftest` also renders the real window headless into `.verify/screens/` (each palette, and
+  Find open).
+- The window has not been driven by hand on a desktop since the UX pass (`docs/UX-PASS.md`); its
+  behaviour is covered by the headless checks. Clipboard, file pickers and the macOS/Linux runtime
+  were not exercised on this host.
 
 ## Known limitations
 
-- Boxes, subdivisions and ellipses store screen-space points; moving a vanishing point afterwards
-  does not re-project them.
+- Boxes saved before the UX pass, and shapes made from four clicked corners, keep their screen
+  points: moving a vanishing point does not re-project them.
 - The ellipse is exact for square faces and for the projected-square quad the box tool builds; a
   general quadrilateral maps a parameter circle, which is the right shape only when the face is
   square in 3D.
-
