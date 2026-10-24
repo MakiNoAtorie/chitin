@@ -57,16 +57,38 @@ public static class Renderer
             }
         }
 
-        // An empty plane says how to start.
         if (interactive && world.Overlay == null && world.VanishingPoints.All(point => point == null))
         {
-            FormattedText hint = Format(EmptyHint, 12, styles.MutedText, Chrome.Mono);
-            context.DrawText(hint, new Point(camera.X * styles.Zoom - hint.Width / 2,
-                camera.Y * styles.Zoom - hint.Height / 2));
+            DrawEmptyHint(context, world, styles, camera);
         }
     }
 
-    internal const string EmptyHint = "Click to place point 1, or choose Camera › 2-point preset";
+    // An empty plane says how to start. The text wraps to the plane and stays on it: its colour is
+    // for the paper, so a plane too small to hold it shows none.
+    private static void DrawEmptyHint(DrawingContext context, World world, Styles styles, Vec2 camera)
+    {
+        const double pad = 12;
+        var plane = new Rect((camera.X - world.PicturePlaneWidthHalf) * styles.Zoom,
+            (camera.Y - world.PicturePlaneHeightHalf) * styles.Zoom,
+            world.PicturePlaneWidth * styles.Zoom, world.PicturePlaneHeight * styles.Zoom);
+        if (plane.Width < 2 * pad + 96)
+        {
+            return;
+        }
+
+        FormattedText hint = Format(EmptyHint, 12, styles.MutedText, Chrome.Mono);
+        hint.MaxTextWidth = plane.Width - 2 * pad;
+        hint.TextAlignment = TextAlignment.Center;
+        if (hint.Height > plane.Height - 2 * pad)
+        {
+            return;
+        }
+
+        context.DrawText(hint, new Point(plane.X + pad, plane.Center.Y - hint.Height / 2));
+    }
+
+    // No hyphen: a wrap on a small plane must not split "2-point".
+    internal const string EmptyHint = "Click to place point 1, or pick a preset in the Camera menu";
 
     private static void DrawUnder(DrawingContext context, World world, Styles styles, RenderMode mode)
     {

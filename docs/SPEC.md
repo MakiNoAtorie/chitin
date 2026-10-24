@@ -139,8 +139,10 @@ least 3:1 against that palette's paper (`CHECK palette_contrast`, WCAG 2 formula
     colour at alpha 192, width `2/Zoom`, dash-dot-dot pattern; the tools' previews).
 11. Pop the transform.
 12. **Empty-plane hint** (interactive only, no point placed, no construction tool):
-    `Click to place point 1, or choose Camera › 2-point preset`, 12 px B612 Mono in muted ink (ink at
-    70 % over paper), centred on the plane.
+    `Click to place point 1, or pick a preset in the Camera menu`, 12 px B612 Mono in muted ink (ink
+    at 70 % over paper), centred on the plane and wrapped to its width less 12 px each side. A plane
+    narrower than 120 px, or too short for the wrapped text, shows no hint: the text never reaches
+    the void (`CHECK empty_hint_fits`).
 
 ## 6.1 Sheet frame (window chrome)
 
@@ -515,7 +517,7 @@ for the construction scene):
   `CHECK points_panel_edits`, `CHECK click_places_points`, `CHECK view_state_outside_undo`,
   `CHECK reference_direct` and `CHECK boxes_follow_points` (each described where its behaviour is).
   The self-test also writes the real window, headless, to `screens/` next to `<path>` (each palette,
-  Find open, a following 3-point box after its point moved, and an empty document) for review. The `-shapes` PNG contains stacked boxes, a subdivided face and an
+  Find open, a following 3-point box after its point moved, and an empty document at fit and zoomed out) for review. The `-shapes` PNG contains stacked boxes, a subdivided face and an
   ellipse; the interactive and export PNGs move when the palette changes.
 
 The operator will inspect all three PNGs. Do not stub rendering, do not catch and swallow errors.

@@ -71,7 +71,7 @@ menu item shows its shortcut. The essentials:
 - `dev-docs/verify.sh`: the build, the self-test (every `CHECK ... PASS`, then `SELFTEST_OK`) and
   the command-line contract.
 - `--selftest` also renders the real window headless into `.verify/screens/` (each palette, Find
-  open, a following 3-point box, and an empty document).
+  open, a following 3-point box, and an empty document at fit and zoomed out).
 - The window has not been driven by hand on a desktop since the UX pass (`docs/UX-PASS.md`); its
   behaviour is covered by the headless checks. Clipboard, file pickers and the macOS/Linux runtime
   were not exercised on this host.

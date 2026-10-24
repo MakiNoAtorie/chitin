@@ -482,6 +482,7 @@ internal static class SelfTest
             Check("pointer_undo", PointerUndo());
             Check("pointer_navigation", PointerNavigation());
             Check("stylus_zoom", StylusZoom());
+            Check("empty_hint_fits", EmptyHintFits());
             Check("click_places_points", ClickPlacesPoints());
             Check("view_state_outside_undo", ViewStateOutsideUndo());
             Check("boxes_follow_points", BoxesFollowPoints());
@@ -1175,6 +1176,53 @@ internal static class SelfTest
         }
     }
 
+    // The empty-plane hint stays on the plane at any zoom: nothing beside a small plane, the wrapped
+    // hint on it, and no hint on a plane too small to hold it.
+    private static bool EmptyHintFits()
+    {
+        (int Void, int Hint) Count(double zoom)
+        {
+            var world = new World();
+            world.Zoom = zoom;
+            world.Camera = new Vec2(320 / zoom, 240 / zoom);
+            world.ZoomChanged();
+            using Bitmap frame = RenderInteractive(world, 640, 480);
+            (byte[] pixels, int stride) = ReadPixels(frame);
+            Color paper = world.ActivePalette.Paper;
+            Color backdrop = world.ActivePalette.Void;
+            double left = 320 - world.PicturePlaneWidthHalf * zoom;
+            double right = 320 + world.PicturePlaneWidthHalf * zoom;
+            double top = 240 - world.PicturePlaneHeightHalf * zoom;
+            double bottom = 240 + world.PicturePlaneHeightHalf * zoom;
+            int voidMarks = 0;
+            int hintMarks = 0;
+            for (int y = 200; y < 280; y++)
+            {
+                for (int x = 0; x < 640; x++)
+                {
+                    (byte b, byte g, byte r, _) = PixelAt(pixels, stride, x, y);
+                    bool outside = x < left - 10 || x > right + 10;
+                    bool inside = x > left + 2 && x < right - 2 && y > top + 2 && y < bottom - 2;
+                    if (outside && (r, g, b) != (backdrop.R, backdrop.G, backdrop.B))
+                    {
+                        voidMarks++;
+                    }
+                    else if (inside && (r, g, b) != (paper.R, paper.G, paper.B))
+                    {
+                        hintMarks++;
+                    }
+                }
+            }
+
+            return (voidMarks, hintMarks);
+        }
+
+        (int Void, int Hint) full = Count(1);
+        (int Void, int Hint) small = Count(0.3);
+        (int Void, int Hint) tiny = Count(0.15);
+        return full.Hint > 0 && small.Void == 0 && small.Hint > 0 && tiny.Void == 0 && tiny.Hint == 0;
+    }
+
     // Points tool: a click on the empty plane places the next point; with a point selected it only
     // unselects. The trace tool pulls a trace line with the left button.
     private static bool ClickPlacesPoints()
@@ -1840,6 +1888,8 @@ internal static class SelfTest
 
             viewport.NewDocument();
             Capture(window, Path.Combine(directory, "window-empty.png"));
+            viewport.ZoomAt(new Point(viewport.Bounds.Width / 2, viewport.Bounds.Height / 2), 0.35);
+            Capture(window, Path.Combine(directory, "window-empty-zoomed-out.png"));
         }
         finally
         {
