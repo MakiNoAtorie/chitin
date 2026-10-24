@@ -394,7 +394,8 @@ public partial class MainWindow
     private void UpdateNotes()
     {
         List<string> notes = NoteTexts();
-        string key = string.Join("\n", notes);
+        bool error = Viewport.World.StatusIsError;
+        string key = string.Join("\n", notes) + error;
         if (key == _notesKey)
         {
             return;
@@ -423,7 +424,12 @@ public partial class MainWindow
                 row.Children.Add(mark);
             }
 
-            row.Children.Add(new TextBlock { Text = notes[i], TextTrimming = TextTrimming.CharacterEllipsis });
+            row.Children.Add(new TextBlock
+            {
+                Text = notes[i],
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                FontWeight = error && i == 1 ? FontWeight.Bold : FontWeight.Normal
+            });
             Notes.Children.Add(row);
         }
     }

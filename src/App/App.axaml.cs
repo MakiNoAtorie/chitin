@@ -19,7 +19,7 @@ public partial class App : Application
         Dispatcher.UIThread.UnhandledException += (_, args) =>
         {
             Console.Error.WriteLine(args.Exception);
-            window?.Viewport.World.SetStatus($"Error: {args.Exception.Message}");
+            window?.Viewport.World.SetError($"Error: {args.Exception.Message}");
             args.Handled = true;
         };
 

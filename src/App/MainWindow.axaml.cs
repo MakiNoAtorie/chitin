@@ -76,7 +76,7 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
-            Viewport.World.SetStatus($"Close failed: {exception.Message}");
+            Viewport.World.SetError($"Close failed: {exception.Message}");
         }
         finally
         {
@@ -203,7 +203,7 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
-            Viewport.World.SetStatus($"Command failed: {exception.Message}");
+            Viewport.World.SetError($"Command failed: {exception.Message}");
         }
         finally
         {

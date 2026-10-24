@@ -95,6 +95,7 @@ public class ViewportControl : Control
     {
         base.OnPointerPressed(e);
         Focus();
+        World.ClearError();
 
         Point position = e.GetPosition(this);
         _mouseWorld = ToWorld(position);
@@ -450,6 +451,7 @@ public class ViewportControl : Control
             return Task.CompletedTask;
         }
 
+        World.ClearError();
         Task task = command.Run(Math.Max(index, 0));
         World.BumpRevision(false);
         InvalidateVisual();
@@ -483,6 +485,11 @@ public class ViewportControl : Control
 
             // Mark the key handled before the await, or it bubbles to MainWindow and runs again.
             e.Handled = true;
+            if (!toolKey)
+            {
+                World.ClearError();
+            }
+
             Task task = toolKey ? Task.CompletedTask : entry.Command!.Run(entry.Index);
             World.BumpRevision(false);
             InvalidateVisual();
@@ -490,7 +497,7 @@ public class ViewportControl : Control
         }
         catch (Exception exception)
         {
-            World.SetStatus($"Key handling failed: {exception.Message}");
+            World.SetError($"Key handling failed: {exception.Message}");
             InvalidateVisual();
         }
     }
@@ -752,7 +759,7 @@ public class ViewportControl : Control
     {
         if (World.FindRig(name) < 0)
         {
-            World.SetStatus($"Rig not found: {name}");
+            World.SetError($"Rig not found: {name}");
         }
         else
         {
@@ -836,7 +843,7 @@ public class ViewportControl : Control
         }
         catch (Exception exception)
         {
-            World.SetStatus($"Save rig failed: {exception.Message}");
+            World.SetError($"Save rig failed: {exception.Message}");
         }
         finally
         {
@@ -847,16 +854,17 @@ public class ViewportControl : Control
     private static async Task<string?> PromptForNameAsync(Window owner, string title, string initial)
     {
         var input = new TextBox { Text = initial };
-        bool saved = await AskAsync(owner, title, 360, "Save", isDefault: true,
-            new TextBlock { Text = "Rig name" }, input);
+        bool saved = await ChooseAsync(owner, title, 360, new[] { "Save", "Cancel" },
+            new TextBlock { Text = "Rig name" }, input) == 0;
         return saved ? input.Text : null;
     }
 
-    // A small modal dialog: the body controls, then Cancel and one accept button.
-    private static async Task<bool> AskAsync(Window owner, string title, double width, string accept,
-        bool isDefault, params Control[] body)
+    // A small modal dialog: the body, then one button per choice. The first choice is the default
+    // (Enter), the last cancels (Escape, or closing the window). Returns the chosen index.
+    internal static async Task<int> ChooseAsync(Window owner, string title, double width, string[] choices,
+        params Control[] body)
     {
-        bool accepted = false;
+        int chosen = choices.Length - 1;
         var dialog = new Window
         {
             Title = title,
@@ -866,28 +874,38 @@ public class ViewportControl : Control
             WindowStartupLocation = WindowStartupLocation.CenterOwner
         };
 
-        var acceptButton = new Button { Content = accept, Width = 90, IsDefault = isDefault };
-        var cancelButton = new Button { Content = "Cancel", Width = 90, IsCancel = true };
-        acceptButton.Click += (_, _) =>
-        {
-            accepted = true;
-            dialog.Close();
-        };
-        cancelButton.Click += (_, _) => dialog.Close();
-
-        var panel = new StackPanel { Margin = new Thickness(16), Spacing = 12 };
-        panel.Children.AddRange(body);
-        panel.Children.Add(new StackPanel
+        var buttons = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Spacing = 8,
-            Children = { cancelButton, acceptButton }
-        });
+            Spacing = 8
+        };
+        for (int i = 0; i < choices.Length; i++)
+        {
+            int index = i;
+            var button = new Button
+            {
+                Content = choices[i],
+                MinWidth = 90,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                IsDefault = i == 0,
+                IsCancel = i == choices.Length - 1
+            };
+            button.Click += (_, _) =>
+            {
+                chosen = index;
+                dialog.Close();
+            };
+            buttons.Children.Add(button);
+        }
+
+        var panel = new StackPanel { Margin = new Thickness(16), Spacing = 12 };
+        panel.Children.AddRange(body);
+        panel.Children.Add(buttons);
         dialog.Content = panel;
 
         await dialog.ShowDialog(owner);
-        return accepted;
+        return chosen;
     }
 
     public async Task SaveProjectAsync(bool saveAs)
@@ -930,7 +948,7 @@ public class ViewportControl : Control
         }
         catch (Exception exception)
         {
-            World.SetStatus($"Save failed: {exception.Message}");
+            World.SetError($"Save failed: {exception.Message}");
         }
         finally
         {
@@ -1030,7 +1048,7 @@ public class ViewportControl : Control
         catch (Exception exception)
         {
             Revert();
-            World.SetStatus($"Reference settings failed: {exception.Message}");
+            World.SetError($"Reference settings failed: {exception.Message}");
         }
         finally
         {
@@ -1101,7 +1119,7 @@ public class ViewportControl : Control
         }
         catch (Exception exception)
         {
-            World.SetStatus($"Export failed: {exception.Message}");
+            World.SetError($"Export failed: {exception.Message}");
         }
         finally
         {
@@ -1150,7 +1168,7 @@ public class ViewportControl : Control
         }
         catch (Exception exception)
         {
-            World.SetStatus($"Open failed: {exception.Message}");
+            World.SetError($"Open failed: {exception.Message}");
         }
         finally
         {
@@ -1183,13 +1201,20 @@ public class ViewportControl : Control
             return true;
         }
 
-        // Discard is not the default button: Enter must not throw work away.
-        return await AskAsync(owner, "Unsaved changes", 420, "Discard", isDefault: false,
+        // Save is the default button: Enter must not throw work away.
+        int choice = await ChooseAsync(owner, "Unsaved changes", 420, new[] { "Save", "Don't save", "Cancel" },
             new TextBlock
             {
-                Text = "This project has unsaved changes. Discard them?",
+                Text = $"Save changes to {CurrentFile?.Name ?? "Untitled"}?",
                 TextWrapping = TextWrapping.Wrap
             });
+        if (choice == 0)
+        {
+            await SaveProjectAsync(false);
+            return !World.IsDirty;
+        }
+
+        return choice == 1;
     }
 
     // For keys the window receives while focus is elsewhere (the menu), and for the self-test.
@@ -1223,7 +1248,7 @@ public class ViewportControl : Control
         }
         catch (Exception exception)
         {
-            World.SetStatus($"Resize failed: {exception.Message}");
+            World.SetError($"Resize failed: {exception.Message}");
             InvalidateVisual();
         }
     }
@@ -1264,7 +1289,7 @@ public class ViewportControl : Control
             await using Stream stream = await files[0].OpenReadAsync();
             if (stream.CanSeek && stream.Length > World.MaxEncodedImageBytes)
             {
-                World.SetStatus("Image refused: file is larger than 64 MB.");
+                World.SetError("Image refused: file is larger than 64 MB.");
                 InvalidateVisual();
                 return;
             }
@@ -1287,7 +1312,7 @@ public class ViewportControl : Control
         }
         catch (Exception exception)
         {
-            World.SetStatus($"Could not load image: {exception.Message}");
+            World.SetError($"Could not load image: {exception.Message}");
         }
 
         InvalidateVisual();
@@ -1312,7 +1337,7 @@ public class ViewportControl : Control
         if ((long)bitmap.PixelSize.Width * bitmap.PixelSize.Height > World.MaxDecodedImagePixels)
         {
             bitmap.Dispose();
-            World.SetStatus("Image refused: larger than 40 megapixels.");
+            World.SetError("Image refused: larger than 40 megapixels.");
             InvalidateVisual();
             return;
         }
@@ -1358,7 +1383,7 @@ public class ViewportControl : Control
         }
         catch (Exception exception)
         {
-            World.SetStatus($"Copy failed: {exception.Message}");
+            World.SetError($"Copy failed: {exception.Message}");
         }
         finally
         {

@@ -378,6 +378,16 @@ internal static class SelfTest
             statusWorld.SetStatus("visible");
             Check("status_message", statusWorld.StatusMessage == "visible" && statusChanges == 1);
 
+            // An error stays until the next command; a command does not clear a prompt early.
+            var errorViewport = new ViewportControl();
+            errorViewport.World.SetError("Save failed: disk full");
+            bool errorShown = errorViewport.World.StatusIsError;
+            errorViewport.ProcessKey(new KeyEventArgs { Key = Key.G });
+            bool errorCleared = errorViewport.World.StatusMessage == null && !errorViewport.World.StatusIsError;
+            errorViewport.World.SetStatus("hint");
+            errorViewport.ProcessKey(new KeyEventArgs { Key = Key.G });
+            Check("error_persists", errorShown && errorCleared && errorViewport.World.StatusMessage == "hint");
+
             var guardWorld = new World();
             var previous = new WriteableBitmap(new PixelSize(2, 2), new Vector(96, 96),
                 PixelFormat.Bgra8888, AlphaFormat.Premul);
@@ -1055,17 +1065,26 @@ internal static class SelfTest
             CloseDialogs(window);
             bool kept = cancelled.IsCompleted && viewport.World.VanishingPoints[0] != null;
 
+            Button Choice(string name) => window.OwnedWindows.Single().GetLogicalDescendants().OfType<Button>()
+                .Single(button => (string?)button.Content == name);
+
+            // Save first: the save picker gives no file here, so the document stays.
+            Task saveFirst = viewport.NewDocumentAsync();
+            bool saveDefault = Choice("Save").IsDefault && Choice("Cancel").IsCancel;
+            Choice("Save").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            CloseDialogs(window);
+            bool keptUnsaved = saveFirst.IsCompleted && viewport.World.VanishingPoints[0] != null;
+
             Task discarded = viewport.NewDocumentAsync();
-            Button discard = window.OwnedWindows.Single().GetLogicalDescendants().OfType<Button>()
-                .Single(button => (string?)button.Content == "Discard");
-            discard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Choice("Don't save").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Dispatcher.UIThread.RunJobs();
             bool cleared = discarded.IsCompleted && viewport.World.VanishingPoints[0] == null;
 
             viewport.World.MarkSaved();
             bool cleanSkipsDialog = viewport.NewDocumentAsync().IsCompleted &&
                 window.OwnedWindows.Count == 0;
-            return asked && kept && cleared && cleanSkipsDialog;
+            return asked && kept && saveDefault && keptUnsaved && cleared && cleanSkipsDialog;
         }
         finally
         {

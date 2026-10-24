@@ -262,11 +262,40 @@ public class World
         BumpRevision();
     }
 
+    // An error stays until the next command; a prompt clears itself after five seconds.
+    public bool StatusIsError { get; private set; }
+
+    public void SetError(string message)
+    {
+        ShowStatus(message, error: true);
+    }
+
+    public void ClearError()
+    {
+        if (StatusIsError)
+        {
+            StatusMessage = null;
+            StatusIsError = false;
+            _statusVersion++;
+            StatusChanged?.Invoke();
+        }
+    }
+
     public void SetStatus(string message)
     {
+        ShowStatus(message, error: false);
+    }
+
+    private void ShowStatus(string message, bool error)
+    {
         StatusMessage = message;
+        StatusIsError = error;
         int version = ++_statusVersion;
         StatusChanged?.Invoke();
+        if (error)
+        {
+            return;
+        }
 
         DispatcherTimer.RunOnce(() =>
         {
@@ -296,7 +325,7 @@ public class World
         if (image != null && (long)image.PixelSize.Width * image.PixelSize.Height > MaxDecodedImagePixels)
         {
             image.Dispose();
-            SetStatus("Image refused: larger than 40 megapixels.");
+            SetError("Image refused: larger than 40 megapixels.");
             return;
         }
 
