@@ -19,11 +19,12 @@ public readonly record struct HelpRow(string Keys, string Text, double Indent = 
 
 public static class Commands
 {
-    // Per word, case-insensitive, over name and group: "grid sty" finds "Cycle grid style".
+    // Per word, case-insensitive, over name and group: "grid lar" finds "Larger grid". An indexed
+    // command needs its digit key, so Find leaves it out.
     public static List<Command> Find(IEnumerable<Command> commands, string query)
     {
         string[] words = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return commands.Where(command => words.All(word =>
+        return commands.Where(command => !command.Indexed && words.All(word =>
             $"{command.Name} {command.Group}".Contains(word, StringComparison.OrdinalIgnoreCase))).ToList();
     }
 
@@ -63,19 +64,19 @@ public static class Commands
     {
         var rows = new List<HelpRow>
         {
+            new("Click", "Place the next point (points tool)"),
             new("Left drag", "Drag a vanishing point"),
-            new("Middle drag", "Pan camera"),
-            new("Wheel", "Zoom camera"),
-            new("Right drag", "Create a trace line (2 max)"),
+            new("Space + drag", "Pan (middle drag too)"),
+            new("Wheel", "Pan (Shift: sideways)"),
+            new("Ctrl + wheel", "Zoom about the cursor"),
+            new("Right drag", "Create a trace line (2 max; T tool: left drag)"),
             new("+ Ctrl", "Snap to 5 degree increments", 32),
             new("+ Shift", "Snap to 15 degree increments", 32),
             new(" ", " "),
             new("In the box tool", " "),
             new("1 / 2", "During the first drag: follow point 1 or 2", 32),
             new("In the subdivision tool", " "),
-            new("2-9  + / -", "Cells per side (with Shift: rows only)", 32),
-            new("Shift + first click", "Divide one edge instead", 32),
-            new("Enter", "Commit the subdivision", 32),
+            new("2-9  + / -", "Cells of the last subdivision (with Shift: rows only)", 32),
             new("In a tool", " "),
             new("Backspace", "Cancel, or delete its last shape", 32)
         };

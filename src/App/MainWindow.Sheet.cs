@@ -19,9 +19,10 @@ public partial class MainWindow
 
     private static readonly TrayTool[] TrayTools =
     {
-        new("P", "Points", "Esc", "1-9 drop a point at the cursor · drag a point to move it",
+        new("P", "Points", "Esc", "Click to place the next point · drag a point to move it · 1-9 drop one at the cursor",
             "Leave tool / unselect", null),
-        new("T", "Trace", "right-drag", "Ctrl snaps to 5°, Shift to 15°", null, null),
+        new("T", "Trace", "T", "Drag a trace line (right-drag works in every tool) · Ctrl snaps to 5°, Shift to 15°",
+            "Trace tool", ToolKind.Trace),
         new("B", "Box", "B", "Drag width, then depth, then height", "Box tool", ToolKind.Box),
         new("D", "Subdivide", "D", "Click a box face or four corners, then 2-9 cells", "Subdivision tool",
             ToolKind.Subdivision),
@@ -46,10 +47,11 @@ public partial class MainWindow
     {
         return tool switch
         {
+            ToolKind.Trace => "Drag to pull a trace line (two at most) · Ctrl snaps to 5°, Shift to 15° · Esc leaves",
             ToolKind.Box => "Drag width, then depth, then height · 1 / 2 force an axis · Esc leaves",
-            ToolKind.Subdivision => "Click a box face or four corners · 2-9 cells · Enter commits",
-            ToolKind.Ellipse => "Click a box face or four corners, then drag from the centre",
-            _ => "Drag a point to move it · 1-9 drops a point at the cursor · right-drag pulls a trace line"
+            ToolKind.Subdivision => "Click a box face or four corners · 2-9 set its cells (Shift: rows) · Esc leaves",
+            ToolKind.Ellipse => "Click a box face or four corners, then drag from the centre · Esc leaves",
+            _ => "Click to place a point · drag a point to move it · right-drag pulls a trace line · Space+drag pans"
         };
     }
 
@@ -263,7 +265,7 @@ public partial class MainWindow
 
         _pointsEmpty = new TextBlock
         {
-            Text = "No points yet. Press 1-9 over the plane, or use Camera › 2-point preset.",
+            Text = "No points yet. Click the plane, press 1-9 over it, or use Camera › 2-point preset.",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(10, 8),
             Opacity = 0.8

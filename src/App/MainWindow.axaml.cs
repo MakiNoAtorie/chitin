@@ -10,7 +10,6 @@ public partial class MainWindow : Window
     private bool _forceClose;
     private bool _confirmingClose;
     private readonly Dictionary<string, MenuItem> _menuItems = new();
-    private readonly Separator _rigSeparator = new();
 
     public MainWindow()
     {
@@ -137,48 +136,9 @@ public partial class MainWindow : Window
         }
 
         menus["Edit"].SubmenuOpened += EditMenu_Opened;
-        menus["Camera"].Items.Add(_rigSeparator);
-        menus["Camera"].SubmenuOpened += CameraMenu_Opened;
     }
 
     internal MenuItem MenuItemFor(string name) => _menuItems[name];
-
-    private void CameraMenu_Opened(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not MenuItem menu)
-        {
-            return;
-        }
-
-        int separator = menu.Items.IndexOf(_rigSeparator);
-        if (separator < 0)
-        {
-            return;
-        }
-
-        _rigSeparator.IsVisible = Viewport.World.Rigs.Count > 0;
-        while (menu.Items.Count > separator + 1)
-        {
-            menu.Items.RemoveAt(menu.Items.Count - 1);
-        }
-
-        foreach (RigState rig in Viewport.World.Rigs)
-        {
-            // TextBlock headers: a string header reads "_" as an access-key marker and hides it.
-            string name = rig.Name;
-            var recall = new MenuItem { Header = "Recall" };
-            var rename = new MenuItem { Header = "Rename..." };
-            var delete = new MenuItem { Header = "Delete" };
-            recall.Click += (_, _) => Run(() => Viewport.RecallRig(name));
-            rename.Click += (_, _) => RunAsync(() => Viewport.RenameRigAsync(name));
-            delete.Click += (_, _) => Run(() => Viewport.DeleteRig(name));
-            menu.Items.Add(new MenuItem
-            {
-                Header = new TextBlock { Text = name },
-                ItemsSource = new[] { recall, rename, delete }
-            });
-        }
-    }
 
     private void EditMenu_Opened(object? sender, RoutedEventArgs e)
     {

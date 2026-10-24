@@ -26,7 +26,6 @@ public class World
     public List<BoxState> Boxes = new();
     public List<SubdivisionState> Subdivisions = new();
     public List<EllipseState> Ellipses = new();
-    public List<RigState> Rigs = new();
     public double Zoom = 1;
     public Vec2 Camera = new();
     public MouseMode? Overlay;
@@ -46,7 +45,6 @@ public class World
     public bool ShowCone;
     public int DisposedImageCount { get; private set; }
     public bool ShowGrid;
-    public int GridStyle;
     public int GridSz = 32;
 
     public bool IsDirty { get; private set; }
@@ -129,10 +127,9 @@ public class World
             Doc = new DocState { W = PicturePlaneWidth, H = PicturePlaneHeight },
             Zoom = Zoom,
             Camera = Camera,
-            Grid = new GridState { Show = ShowGrid, Style = GridStyle, Size = GridSz },
+            Grid = new GridState { Show = ShowGrid, Size = GridSz },
             Reference = Reference.Clone(),
             Palette = PaletteName,
-            PaletteOffset = _paletteOffset,
             ShowCone = ShowCone,
             Background = BackgroundImg
         };
@@ -163,11 +160,6 @@ public class World
         foreach (EllipseState ellipse in Ellipses)
         {
             state.Ellipses.Add(ellipse.Clone());
-        }
-
-        foreach (RigState rig in Rigs)
-        {
-            state.Rigs.Add(rig.Clone());
         }
 
         return state;
@@ -237,26 +229,20 @@ public class World
             Ellipses.Add(ellipse.Clone());
         }
 
-        Rigs = new List<RigState>();
-        foreach (RigState rig in state.Rigs ?? new List<RigState>())
-        {
-            if (rig?.Vps == null || string.IsNullOrWhiteSpace(rig.Name))
-            {
-                continue;
-            }
-
-            Rigs.Add(rig.Clone());
-        }
-
-        ShowGrid = state.Grid.Show;
-        GridStyle = Math.Clamp(state.Grid.Style, 0, 2);
-        GridSz = Math.Clamp(state.Grid.Size, MinGridSize, MaxGridSize);
+        RestoreView(state);
         Reference = NormalizeReference(state.Reference, out _);
-        ShowCone = state.ShowCone;
-        ApplyPalette(state.Palette,
-            state.PaletteOffset, bump: false);
         SelectionIdx = -1;
         BumpRevision();
+    }
+
+    // View state: saved in the file, but never in undo and never a reason to ask before closing.
+    public void RestoreView(WorldState state)
+    {
+        ShowGrid = state.Grid.Show;
+        GridSz = Math.Clamp(state.Grid.Size, MinGridSize, MaxGridSize);
+        ShowCone = state.ShowCone;
+        PaletteName = Palette.ByName(state.Palette).Name;
+        ZoomChanged();
     }
 
     // An error stays until the next command; a prompt clears itself after five seconds.
@@ -365,10 +351,6 @@ public class World
         DisposedImageCount++;
     }
 
-    private int _paletteOffset;
-
-    public int PaletteOffset => _paletteOffset;
-
     public Palette ActivePalette => Palette.ByName(PaletteName);
 
     public World()
@@ -378,51 +360,22 @@ public class World
             UnitVectors[i] = Vec2.RotateAroundOrigin(i, new Vec2(0, 1));
         }
 
-        ApplyPalette(Palette.Default.Name, 0, bump: false);
+        ZoomChanged();
         ResetDocument(640, 480);
         MarkSaved();
     }
 
-    private void ApplyPalette(string name, int offset, bool bump = true)
-    {
-        Palette palette = Palette.ByName(name);
-        PaletteName = palette.Name;
-        _paletteOffset = ((offset % 9) + 9) % 9;
-        ZoomChanged();
-        if (bump)
-        {
-            BumpRevision();
-        }
-    }
-
+    // View state: no undo, no unsaved-changes flag.
     public void SetPalette(string name)
     {
-        ApplyPalette(name, 0);
-    }
-
-    public void CyclePalette()
-    {
-        int index = 0;
-        for (int i = 0; i < Palette.BuiltIns.Count; i++)
-        {
-            if (string.Equals(Palette.BuiltIns[i].Name, PaletteName, StringComparison.OrdinalIgnoreCase))
-            {
-                index = i;
-                break;
-            }
-        }
-
-        ApplyPalette(Palette.BuiltIns[(index + 1) % Palette.BuiltIns.Count].Name, 0);
-    }
-
-    public void RotatePalette()
-    {
-        ApplyPalette(PaletteName, _paletteOffset + 1);
+        PaletteName = Palette.ByName(name).Name;
+        ZoomChanged();
+        BumpRevision(false);
     }
 
     public Styles StylesAt(double zoom)
     {
-        return new Styles(ActivePalette, _paletteOffset, zoom);
+        return new Styles(ActivePalette, zoom);
     }
 
     public void ZoomChanged()
@@ -473,7 +426,7 @@ public class World
     public void SetGridSize(int size)
     {
         GridSz = Math.Clamp(size, MinGridSize, MaxGridSize);
-        BumpRevision();
+        BumpRevision(false);
     }
 
     public void AddBox(BoxState box)
@@ -555,73 +508,6 @@ public class World
     {
         VanishingPoints = BuildPreset(points, PicturePlaneWidth, PicturePlaneHeight);
         SelectionIdx = -1;
-        BumpRevision();
-    }
-
-    public void SaveRig(string name)
-    {
-        name = name.Trim();
-        var rig = new RigState { Name = name };
-        for (int i = 0; i < VanishingPoints.Length; i++)
-        {
-            if (VanishingPoints[i] is { } point)
-            {
-                rig.Vps[i] = new VanishingPoint(point.Pos, point.Density);
-            }
-        }
-
-        int existing = FindRig(name);
-        if (existing >= 0)
-        {
-            Rigs[existing] = rig;
-        }
-        else
-        {
-            Rigs.Add(rig);
-        }
-
-        BumpRevision();
-    }
-
-    public bool ApplyRig(string name)
-    {
-        int index = FindRig(name);
-        if (index < 0)
-        {
-            return false;
-        }
-
-        RigState rig = Rigs[index];
-        VanishingPoints = new VanishingPoint?[9];
-        VanishingPoint?[] slots = rig.Vps ?? Array.Empty<VanishingPoint?>();
-        for (int i = 0; i < VanishingPoints.Length && i < slots.Length; i++)
-        {
-            if (slots[i] is { } point)
-            {
-                VanishingPoints[i] = new VanishingPoint(point.Pos, point.Density);
-            }
-        }
-
-        SelectionIdx = -1;
-        BumpRevision();
-        return true;
-    }
-
-    // Names compare without case, as when a rig is saved over another.
-    public int FindRig(string name)
-    {
-        return Rigs.FindIndex(rig => string.Equals(rig.Name, name, StringComparison.OrdinalIgnoreCase));
-    }
-
-    public void DeleteRig(string name)
-    {
-        Rigs.RemoveAt(FindRig(name));
-        BumpRevision();
-    }
-
-    public void RenameRig(string name, string newName)
-    {
-        Rigs[FindRig(name)].Name = newName.Trim();
         BumpRevision();
     }
 

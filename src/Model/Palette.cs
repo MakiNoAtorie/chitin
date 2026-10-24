@@ -13,21 +13,6 @@ public sealed record Palette(
     Color Horizon,
     Color Prompt)
 {
-    public static readonly Palette Atelier = new(
-        "atelier",
-        new[]
-        {
-            Hex("#8C6A46"), Hex("#A85A62"), Hex("#6F8158"), Hex("#B07A2E"), Hex("#7C5C74"),
-            Hex("#9A6B4F"), Hex("#6B7A6A"), Hex("#A8563C"), Hex("#7A6A52")
-        },
-        Hex("#8C8272"),
-        Hex("#23201D"),
-        Hex("#F5F0E6"),
-        Hex("#1A1715"),
-        Hex("#2B2724"),
-        Hex("#8C8272"),
-        Hex("#A8563C"));
-
     public static readonly Palette InkPalette = new(
         "ink",
         new[]
@@ -59,13 +44,10 @@ public sealed record Palette(
         Hex("#8A7D6C"),
         Hex("#D98E5F"));
 
-    public static readonly IReadOnlyList<Palette> BuiltIns = new[] { Atelier, InkPalette, Charcoal };
+    public static readonly IReadOnlyList<Palette> BuiltIns = new[] { InkPalette, Charcoal };
 
     // The palette of a new document.
     public static readonly Palette Default = InkPalette;
-
-    // For an unknown name, and for a project file that names none: older files keep their look.
-    public static readonly Palette Fallback = Atelier;
 
     public static Palette ByName(string? name)
     {
@@ -77,7 +59,8 @@ public sealed record Palette(
             }
         }
 
-        return Fallback;
+        // An unknown name, or one no longer offered: the default.
+        return Default;
     }
 
     private static Color Hex(string value)

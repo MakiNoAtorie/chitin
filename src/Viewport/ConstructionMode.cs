@@ -6,6 +6,7 @@ namespace Chitin;
 
 public enum ToolKind
 {
+    Trace,
     Box,
     Subdivision,
     Ellipse
@@ -143,10 +144,10 @@ internal sealed class BoxTool : ConstructionMode
         base.MouseUp();
         if (_stage == 1)
         {
+            // A click without a drag sets nothing.
             if (!HasMoved)
             {
                 _stage = 0;
-                World.SetStatus("Box cancelled: drag to set the first axis.");
                 return;
             }
 
@@ -442,13 +443,11 @@ internal sealed class EllipseTool : ConstructionMode
 
 }
 
+// A pick (box face or four corners) adds the subdivision at once; 2-9 and + / - then change the
+// cells of the one just added, each change one undo step.
 internal sealed class SubdivisionTool : ConstructionMode
 {
-    private Vec2[]? _quad;
-    private bool _edge;
-    private Vec2? _edgeNear;
-    private Vec2? _edgeFar;
-    private int _forcedVp = -1;
+    private SubdivisionState? _last;
     private int _n = 2;
     private int _m = 2;
 
@@ -461,121 +460,52 @@ internal sealed class SubdivisionTool : ConstructionMode
     public override void Begin(Point screen, Vec2 world, KeyModifiers modifiers)
     {
         base.Begin(screen, world, modifiers);
-        if (_quad != null || _edgeFar != null)
+        if (PickQuad(world) is not { } quad)
         {
             return;
         }
 
-        if (_edge)
+        if (!Homography.FromUnitSquare(quad[0], quad[1], quad[2], quad[3]).IsInvertible)
         {
-            _edgeFar = world;
+            World.SetStatus("Subdivision needs a non-degenerate quad.");
             return;
         }
 
-        if (Corners.Count == 0 && (modifiers & KeyModifiers.Shift) != 0)
-        {
-            _edge = true;
-            _edgeNear = world;
-            return;
-        }
-
-        _quad = PickQuad(world);
+        PushUndo();
+        _last = new SubdivisionState { Quad = quad, N = _n, M = _m, Edge = false };
+        World.AddSubdivision(_last);
     }
 
     public override bool HandleKey(Key key, KeyModifiers modifiers)
     {
-        // Only plain keys and Shift (cells per row) belong to the tool; the rest go to the viewport.
+        // Only plain keys and Shift (rows only) belong to the tool; the rest go to the viewport.
         bool shift = modifiers == KeyModifiers.Shift;
         if (modifiers != KeyModifiers.None && !shift)
         {
             return false;
         }
 
-        if (!shift && _edge && _edgeFar == null && key is Key.D1 or Key.D2)
+        int? cells = key is >= Key.D2 and <= Key.D9 ? key - Key.D0 : null;
+        int step = key is Key.OemPlus or Key.Add ? 1 : key is Key.OemMinus or Key.Subtract ? -1 : 0;
+        if (cells != null || step != 0)
         {
-            _forcedVp = key == Key.D1 ? 0 : 1;
-            return true;
-        }
-
-        if (key >= Key.D2 && key <= Key.D9)
-        {
-            int value = (int)key - (int)Key.D1 + 1;
-            if (_edge)
-            {
-                _n = value;
-            }
-            else if (shift)
-            {
-                _m = value;
-            }
-            else
-            {
-                _n = value;
-                _m = value;
-            }
-
-            return true;
-        }
-
-        if (key is Key.OemPlus or Key.Add)
-        {
-            if (_edge)
-            {
-                _n = Math.Min(9, _n + 1);
-            }
-            else if (shift)
-            {
-                _m = Math.Min(9, _m + 1);
-            }
-            else
-            {
-                _n = Math.Min(9, _n + 1);
-                _m = Math.Min(9, _m + 1);
-            }
-
-            return true;
-        }
-
-        if (key is Key.OemMinus or Key.Subtract)
-        {
-            if (_edge)
-            {
-                _n = Math.Max(1, _n - 1);
-            }
-            else if (shift)
-            {
-                _m = Math.Max(1, _m - 1);
-            }
-            else
-            {
-                _n = Math.Max(1, _n - 1);
-                _m = Math.Max(1, _m - 1);
-            }
-
-            return true;
-        }
-
-        if (key == Key.Enter)
-        {
-            if (_quad == null && _edgeFar == null)
-            {
-                return false;
-            }
-
-            Commit();
+            int n = shift ? _n : Math.Clamp(cells ?? _n + step, 1, 9);
+            int m = Math.Clamp(cells ?? _m + step, 1, 9);
+            SetCells(n, m);
             return true;
         }
 
         if (key == Key.Back)
         {
-            if (_quad != null || _edge)
+            if (Corners.Count > 0)
             {
-                ResetSelection();
+                Corners.Clear();
             }
             else if (World.Subdivisions.Count > 0)
             {
                 PushUndo();
                 World.RemoveLastSubdivision();
+                _last = null;
             }
 
             return true;
@@ -584,124 +514,23 @@ internal sealed class SubdivisionTool : ConstructionMode
         return false;
     }
 
+    // The counts are also the next pick's. After an undo the last subdivision is a copy, so only
+    // the counts change.
+    private void SetCells(int n, int m)
+    {
+        _n = n;
+        _m = m;
+        if (_last != null && World.Subdivisions.Contains(_last) && (_last.N != n || _last.M != m))
+        {
+            PushUndo();
+            _last.N = n;
+            _last.M = m;
+            World.BumpRevision();
+        }
+    }
+
     public override void DrawOver(DrawingContext context)
     {
-        Rect plane = GuideBuilder.PlaneRect(World);
-        var prims = new List<Prim>();
-        if (_edge)
-        {
-            if (_edgeNear is { } near)
-            {
-                context.DrawLine(World.Styles.ConstructionPreviewPen, ToPoint(near), ToPoint(CurrentWorld));
-                if (_edgeFar is { } far)
-                {
-                    GuideBuilder.AddSubdivision(prims, World, World.Styles, new SubdivisionState
-                    {
-                        Quad = new[] { near, far, Marker(near, far), Marker(near, far) },
-                        N = _n,
-                        M = 1,
-                        Edge = true
-                    }, World.Styles.ConstructionPreviewPen, plane);
-                }
-            }
-        }
-        else if (_quad is { } quad)
-        {
-            prims.Add(Prim.Poly(World.Styles.ConstructionPreviewPen, null, quad, true, plane));
-            GuideBuilder.AddSubdivision(prims, World, World.Styles, new SubdivisionState
-            {
-                Quad = quad,
-                N = _n,
-                M = _m,
-                Edge = false
-            }, World.Styles.ConstructionPreviewPen, plane);
-        }
-        else
-        {
-            DrawCorners(context);
-        }
-
-        Draw(prims, context);
+        DrawCorners(context);
     }
-
-    private void Commit()
-    {
-        if (_edge && _edgeNear is { } near && _edgeFar is { } far)
-        {
-            if (near.DistFrom(far) < 1e-9)
-            {
-                World.SetStatus("Subdivision edge needs two distinct points.");
-                return;
-            }
-
-            Vec2 marker = Marker(near, far);
-            PushUndo();
-            World.AddSubdivision(new SubdivisionState
-            {
-                Quad = new[] { near, far, marker, marker },
-                N = _n,
-                M = 1,
-                Edge = true
-            });
-        }
-        else if (_quad is { } quad)
-        {
-            if (!Homography.FromUnitSquare(quad[0], quad[1], quad[2], quad[3]).IsInvertible)
-            {
-                World.SetStatus("Subdivision needs a non-degenerate quad.");
-                return;
-            }
-
-            PushUndo();
-            World.AddSubdivision(new SubdivisionState
-            {
-                Quad = quad,
-                N = _n,
-                M = _m,
-                Edge = false
-            });
-        }
-
-        ResetSelection();
-    }
-
-    private void ResetSelection()
-    {
-        _quad = null;
-        Corners.Clear();
-        _edge = false;
-        _edgeNear = null;
-        _edgeFar = null;
-        _forcedVp = -1;
-    }
-
-    private Vec2 Marker(Vec2 near, Vec2 far)
-    {
-        if (_forcedVp >= 0 && World.VanishingPoints[_forcedVp] is { } forced)
-        {
-            return forced.Pos;
-        }
-
-        int best = -1;
-        double bestDot = -1;
-        Vec2 edge = (far - near).Normalized();
-        for (int i = 0; i < 2; i++)
-        {
-            if (World.VanishingPoints[i] is not { } point || point.Pos.DistFrom(near) < 1e-9)
-            {
-                continue;
-            }
-
-            Vec2 direction = (point.Pos - near).Normalized();
-            double dot = Math.Abs(Vec2.Dot(direction, edge));
-            if (dot > bestDot)
-            {
-                bestDot = dot;
-                best = i;
-            }
-        }
-
-        return best >= 0 ? World.VanishingPoints[best]!.Pos : near;
-    }
-
 }

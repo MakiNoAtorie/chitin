@@ -32,14 +32,15 @@ public sealed class Styles
     public readonly IBrush StationFill;
     public readonly IPen WarningPen;
     public readonly IPen HoverPen;
+    public readonly IBrush MutedText;
 
-    public Styles(Palette palette, int paletteOffset, double zoom)
+    public Styles(Palette palette, double zoom)
     {
         Zoom = zoom;
         VPLines = new IPen[9];
         for (int i = 0; i < 9; i++)
         {
-            VPLines[i] = new Pen(Brush(palette.VpColors[(paletteOffset + i) % 9]), PenWidth(1));
+            VPLines[i] = new Pen(Brush(palette.VpColors[i]), PenWidth(1));
         }
 
         GridPen = new Pen(Brush(Alpha(palette.Grid, 128)), PenWidth(1));
@@ -77,6 +78,7 @@ public sealed class Styles
         StationFill = Brush(palette.Prompt);
         WarningPen = new Pen(Brush(palette.Prompt), PenWidth(2));
         HoverPen = new Pen(Brush(palette.Prompt), PenWidth(2));
+        MutedText = Brush(Chrome.Muted(palette));
     }
 
     private double PenWidth(double width)

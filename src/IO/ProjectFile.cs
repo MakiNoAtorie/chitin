@@ -74,8 +74,7 @@ public static class ProjectFile
             ?? throw new InvalidDataException("Project file does not contain a document.");
         if (state.Doc == null || state.Grid == null || state.Reference == null ||
             state.VanishingPoints == null || state.TraceLines == null ||
-            state.Boxes == null || state.Subdivisions == null || state.Ellipses == null ||
-            state.Rigs == null)
+            state.Boxes == null || state.Subdivisions == null || state.Ellipses == null)
         {
             throw new InvalidDataException("Project file is missing a required section.");
         }

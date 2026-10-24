@@ -17,9 +17,6 @@ public sealed class GridState
     [JsonPropertyName("show")]
     public bool Show { get; set; }
 
-    [JsonPropertyName("style")]
-    public int Style { get; set; }
-
     [JsonPropertyName("size")]
     public int Size { get; set; } = 32;
 }
@@ -124,36 +121,6 @@ public sealed class SubdivisionState
     }
 }
 
-public sealed class RigState
-{
-    [JsonPropertyName("name")]
-    public string Name { get; set; } = string.Empty;
-
-    [JsonPropertyName("vps")]
-    public VanishingPoint?[] Vps { get; set; } = new VanishingPoint?[9];
-
-    public RigState Clone()
-    {
-        var copy = new RigState { Name = Name, Vps = new VanishingPoint?[9] };
-        VanishingPoint?[] source = Vps ?? Array.Empty<VanishingPoint?>();
-        for (int i = 0; i < copy.Vps.Length && i < source.Length; i++)
-        {
-            if (source[i] is { } point && IsValid(point))
-            {
-                copy.Vps[i] = new VanishingPoint(point.Pos, point.Density);
-            }
-        }
-
-        return copy;
-    }
-
-    private static bool IsValid(VanishingPoint point)
-    {
-        return double.IsFinite(point.Pos.X) && double.IsFinite(point.Pos.Y) &&
-               point.Density >= 0;
-    }
-}
-
 public sealed class EllipseState
 {
     [JsonPropertyName("quad")]
@@ -209,17 +176,11 @@ public sealed class WorldState
     [JsonPropertyName("ellipses")]
     public List<EllipseState> Ellipses { get; set; } = new();
 
-    [JsonPropertyName("rigs")]
-    public List<RigState> Rigs { get; set; } = new();
-
     [JsonPropertyName("reference")]
     public ReferenceSettings Reference { get; set; } = new();
 
     [JsonPropertyName("palette")]
-    public string Palette { get; set; } = Chitin.Palette.Fallback.Name;
-
-    [JsonPropertyName("paletteOffset")]
-    public int PaletteOffset { get; set; }
+    public string Palette { get; set; } = Chitin.Palette.Default.Name;
 
     [JsonPropertyName("showCone")]
     public bool ShowCone { get; set; }

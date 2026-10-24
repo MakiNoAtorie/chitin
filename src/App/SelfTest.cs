@@ -33,9 +33,9 @@ internal static class SelfTest
             const int viewportWidth = 1400;
             const int viewportHeight = 900;
 
-            // The gate scene keeps atelier, so its export hash still proves chrome stays out.
+            // The gate scene sets its palette, so its export hash proves chrome stays out of exports.
             var world = new World();
-            world.SetPalette("atelier");
+            world.SetPalette("ink");
             world.VanishingPoints[0] = new VanishingPoint(new Vec2(-420, -140), 0);
             world.VanishingPoints[1] = new VanishingPoint(new Vec2(380, -150), 0);
             world.VanishingPoints[2] = new VanishingPoint(new Vec2(60, -900), 8);
@@ -43,7 +43,6 @@ internal static class SelfTest
             world.TraceLines.Add(new TraceLine(new Vec2(-500, 300), new Vec2(200, -250)));
             world.TraceLines.Add(new TraceLine(new Vec2(0, -400), new Vec2(300, 350)));
             world.ShowGrid = true;
-            world.GridStyle = 0;
             world.GridSz = 40;
             world.SelectionIdx = 2;
             world.Zoom = 1.25;
@@ -202,14 +201,10 @@ internal static class SelfTest
             Check("cone_overlay", coneDrawn && coneHidden && coneSvg);
 
             var paletteWorld = new World();
-            paletteWorld.SetPalette("atelier");
-            Palette atelier = Palette.ByName("atelier");
+            paletteWorld.SetPalette("charcoal");
             bool ordered = Enumerable.Range(0, 9)
-                .All(i => PenColor(paletteWorld.Styles.VPLines[i]) == atelier.VpColors[i]);
-            paletteWorld.RotatePalette();
-            bool rotated = Enumerable.Range(0, 9)
-                .All(i => PenColor(paletteWorld.Styles.VPLines[i]) == atelier.VpColors[(i + 1) % 9]);
-            Check("palette_no_random", ordered && rotated);
+                .All(i => PenColor(paletteWorld.Styles.VPLines[i]) == Palette.Charcoal.VpColors[i]);
+            Check("palette_no_random", ordered && !paletteWorld.IsDirty);
             Check("palette_contrast", Palette.BuiltIns.All(palette =>
                 palette.VpColors.All(color => Chrome.Contrast(color, palette.Paper) >= 3)));
             Check("chrome_contrast", Palette.BuiltIns.All(palette =>
@@ -220,8 +215,9 @@ internal static class SelfTest
                 FontManager.Current.TryGetGlyphTypeface(Chrome.MonoBold, out IGlyphTypeface? bold) &&
                 bold.Weight == FontWeight.Bold);
             Check("default_palette_ink", new World().PaletteName == "ink" &&
-                Palette.ByName("no-such-palette") == Palette.Atelier &&
-                ProjectFile.Read("{\"version\":1}").Palette == "atelier" &&
+                Palette.ByName("no-such-palette") == Palette.InkPalette &&
+                Palette.ByName("atelier") == Palette.InkPalette &&
+                ProjectFile.Read("{\"version\":1}").Palette == "ink" &&
                 ProjectFile.Read(ProjectFile.Write(new World())).Palette == "ink");
             Check("palette_no_blue", Palette.BuiltIns.All(palette =>
                 palette.VpColors.All(NotBlue) && NotBlue(palette.Grid) &&
@@ -259,31 +255,6 @@ internal static class SelfTest
                 .All(point => point == null);
             Check("preset_three_point",
                 threePoint && onePoint && twoPoint && presetUndo && presetUndone);
-
-            var rigWorld = new World();
-            rigWorld.SetPalette("ink");
-            rigWorld.ShowCone = true;
-            rigWorld.VanishingPoints[0] = new VanishingPoint(new Vec2(-224, 48), 0);
-            rigWorld.VanishingPoints[1] = new VanishingPoint(new Vec2(224, 48), 4);
-            rigWorld.SaveRig("Bedroom");
-            WorldState rigProject = ProjectFile.Read(ProjectFile.Write(rigWorld));
-            var rigRestored = new World();
-            rigRestored.Restore(rigProject);
-            bool rigSame = rigRestored.Rigs.Count == 1 &&
-                SameState(rigRestored.Capture(), rigWorld.Capture());
-            rigWorld.VanishingPoints[0] = new VanishingPoint(new Vec2(-100, 48), 0);
-            rigWorld.SaveRig("bedroom");
-            bool rigReplaced = rigWorld.Rigs.Count == 1 &&
-                rigWorld.Rigs[0].Vps[0] is { } replacedPoint &&
-                Math.Abs(replacedPoint.Pos.X + 100) <= 1e-9;
-            var rigViewport = new ViewportControl();
-            rigViewport.World.Rigs.Add(rigProject.Rigs[0].Clone());
-            rigViewport.RecallRig("Bedroom");
-            bool rigUndo = rigViewport.History.CanUndo &&
-                VpAt(rigViewport.World, 0, -224, 48);
-            rigViewport.Undo();
-            bool rigUndone = rigViewport.World.VanishingPoints.All(point => point == null);
-            Check("rig_roundtrip", rigSame && rigReplaced && rigUndo && rigUndone);
 
             World boxWorld = shapesWorld;
 
@@ -427,7 +398,7 @@ internal static class SelfTest
             Prim[] afterDensity = keyWorld.Prims;
             keyViewport.ProcessKey(new KeyEventArgs { Key = Key.OemPlus });
             Prim[] afterGridSize = keyWorld.Prims;
-            keyViewport.ProcessKey(new KeyEventArgs { Key = Key.Left, KeyModifiers = KeyModifiers.Control });
+            keyViewport.ProcessKey(new KeyEventArgs { Key = Key.Down });
             Prim[] afterMirror = keyWorld.Prims;
             keyViewport.ProcessKey(new KeyEventArgs { Key = Key.Escape });
             Prim[] afterDeselect = keyWorld.Prims;
@@ -461,8 +432,6 @@ internal static class SelfTest
             Prim[] afterEllipseAdd = keyWorld.Prims;
             keyWorld.RemoveLastEllipse();
             Prim[] afterEllipseRemove = keyWorld.Prims;
-            keyViewport.ProcessKey(new KeyEventArgs { Key = Key.S });
-            Prim[] afterPaletteRotate = keyWorld.Prims;
             keyViewport.ProcessKey(new KeyEventArgs { Key = Key.V });
             Prim[] afterCone = keyWorld.Prims;
             keyViewport.ProcessKey(new KeyEventArgs
@@ -473,7 +442,7 @@ internal static class SelfTest
             Prim[] afterPaletteCycle = keyWorld.Prims;
             keyViewport.ApplyCameraPreset(2);
             Prim[] afterPreset = keyWorld.Prims;
-            keyViewport.ProcessKey(new KeyEventArgs { Key = Key.R, KeyModifiers = KeyModifiers.Control });
+            keyViewport.ClearDocument();
             Prim[] afterReset = keyWorld.Prims;
             Check("revision_coverage",
                 !ReferenceEquals(beforeGrid, afterGrid) &&
@@ -490,8 +459,7 @@ internal static class SelfTest
                 !ReferenceEquals(afterSubdivisionAdd, afterSubdivisionRemove) &&
                 !ReferenceEquals(afterSubdivisionRemove, afterEllipseAdd) &&
                 !ReferenceEquals(afterEllipseAdd, afterEllipseRemove) &&
-                !ReferenceEquals(afterEllipseRemove, afterPaletteRotate) &&
-                !ReferenceEquals(afterPaletteRotate, afterCone) &&
+                !ReferenceEquals(afterEllipseRemove, afterCone) &&
                 !ReferenceEquals(afterCone, afterPaletteCycle) &&
                 !ReferenceEquals(afterPaletteCycle, afterPreset) &&
                 !ReferenceEquals(afterPreset, afterReset));
@@ -513,14 +481,17 @@ internal static class SelfTest
             Check("confirm_discard", ConfirmBeforeDiscard());
             Check("pointer_undo", PointerUndo());
             Check("pointer_navigation", PointerNavigation());
+            Check("click_places_points", ClickPlacesPoints());
+            Check("view_state_outside_undo", ViewStateOutsideUndo());
             Check("menu_gestures", MenuGesturesBound());
             Check("window_keys_once", WindowKeysRunOnce());
             Check("menu_state", MenuState());
             Check("commands_unique_gestures", CommandsUniqueGestures());
             Check("help_matches_commands", HelpMatchesCommands());
-            List<Command> found = Commands.Find(new ViewportControl().Commands, "grid sty");
-            Check("find_matches_words", found.Count == 1 && found[0].Name == "Cycle grid style" &&
-                Commands.Find(new ViewportControl().Commands, "GRID view").Count == 4);
+            List<Command> found = Commands.Find(new ViewportControl().Commands, "grid lar");
+            Check("find_matches_words", found.Count == 1 && found[0].Name == "Larger grid" &&
+                Commands.Find(new ViewportControl().Commands, "GRID view").Count == 3 &&
+                Commands.Find(new ViewportControl().Commands, "vanishing point").Count == 0);
             Check("window_title", MainWindow.WindowTitle(null, false) == "Untitled - Chitin" &&
                 MainWindow.WindowTitle("room.chitin.json", true) == "room.chitin.json * - Chitin");
             var export = new ExportDialog(640, 480);
@@ -536,8 +507,6 @@ internal static class SelfTest
             Check("tool_pick_quad", ToolPickQuad());
             Check("density_clamp", DensityClamped());
             Check("image_header_guard", ImageHeaderGuard());
-            Check("rig_cancel_silent", RigCancelSilent());
-            Check("rig_manage", RigManage());
             Check("reference_cancel_clean", ReferenceCancelClean());
             Check("key_modifiers", KeyModifiersExact());
             bool newerRefused;
@@ -650,7 +619,6 @@ internal static class SelfTest
                 R = 0.3
             });
             roundWorld.ShowGrid = true;
-            roundWorld.GridStyle = 2;
             roundWorld.GridSz = 16;
             roundWorld.SetReferenceImage(TestBitmap());
             roundWorld.Reference = new ReferenceSettings
@@ -661,7 +629,6 @@ internal static class SelfTest
                 Offset = new Vec2(10, -15)
             };
             roundWorld.SetPalette("charcoal");
-            roundWorld.RotatePalette();
             roundWorld.ShowCone = true;
             roundWorld.BumpRevision();
 
@@ -785,10 +752,11 @@ internal static class SelfTest
             referenceWorld.SetReferenceImage(null);
             Check("reference_transform", referenceTransform);
 
-            // Chrome never reaches an export: both hashes are the ones from before the sheet frame.
+            // Chrome never reaches an export. Recorded in ink when atelier was removed; the same as
+            // the pre-UX-pass renderer gives for these scenes in ink.
             Check("export_unchanged",
-                FileHash(exportPath) == "0120d0b8255f486129c0ca37d8e34e8ceafb4f97c45177f81a2998bce2e5defa" &&
-                FileHash(shapesPath) == "af9cc42976507afa331fbf78a34b6c404d595bca6c0b052cb6e51b3e4aaccb69");
+                FileHash(exportPath) == "672915053bac52595711afde22b66936082470015c6b9c7ab874fed9f195a0a9" &&
+                FileHash(shapesPath) == "d4c6243a7574c79e1becc06932c60ee6c75a34b4f1475b3682c4457662133a68");
 
             List<RulerTick> atOne = Sheet.Ticks(1, 0, 400);
             List<RulerTick> atTwo = Sheet.Ticks(2, 0, 400);
@@ -852,7 +820,6 @@ internal static class SelfTest
             Hidden(above, 5, 6) && Hidden(above, 6, 7) && Hidden(above, 2, 6);
     }
 
-    // Every shortcut the menu shows must exist in the key table, or the menu item does nothing.
     // Real key presses on the main window: each shortcut runs once, though the menu shows it too.
     private static bool WindowKeysRunOnce()
     {
@@ -866,15 +833,15 @@ internal static class SelfTest
             viewport.Focus();
             window.KeyPress(Key.G, RawInputModifiers.None, PhysicalKey.G, "g");
             window.KeyRelease(Key.G, RawInputModifiers.None, PhysicalKey.G, "g");
-            bool gridOnce = world.ShowGrid && viewport.History.CanUndo;
+            bool gridOnce = world.ShowGrid;
 
-            window.KeyPress(Key.G, RawInputModifiers.Control, PhysicalKey.G, "g");
-            window.KeyRelease(Key.G, RawInputModifiers.Control, PhysicalKey.G, "g");
-            bool styleOnce = world.GridStyle == 1;
+            window.KeyPress(Key.D1, RawInputModifiers.None, PhysicalKey.Digit1, "1");
+            window.KeyRelease(Key.D1, RawInputModifiers.None, PhysicalKey.Digit1, "1");
+            bool dropOnce = world.VanishingPoints[0] != null && world.VanishingPoints[1] == null;
 
             window.KeyPress(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, "z");
             window.KeyRelease(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, "z");
-            bool undoOnce = world.GridStyle == 0 && world.ShowGrid;
+            bool undoOnce = world.VanishingPoints[0] == null && !viewport.History.CanUndo && world.ShowGrid;
 
             // A menu click runs the key's entry; a shortcut the viewport did not receive is forwarded.
             MenuItem gridItem = window.FindControl<Menu>("MainMenu")!.GetLogicalDescendants()
@@ -885,11 +852,11 @@ internal static class SelfTest
             window.RaiseEvent(new KeyEventArgs
             {
                 RoutedEvent = InputElement.KeyDownEvent,
-                Key = Key.G,
-                KeyModifiers = KeyModifiers.Control
+                Key = Key.P,
+                KeyModifiers = KeyModifiers.Control | KeyModifiers.Shift
             });
-            bool forwarded = world.GridStyle == 1;
-            return gridOnce && styleOnce && undoOnce && menuClick && forwarded;
+            bool forwarded = world.PaletteName == "charcoal";
+            return gridOnce && dropOnce && undoOnce && menuClick && forwarded;
         }
         finally
         {
@@ -897,36 +864,27 @@ internal static class SelfTest
         }
     }
 
-    // Edit menu enables Undo/Redo from the history; the Camera menu lists rigs with a working submenu.
+    // Edit menu enables Undo/Redo from the history and names the command each one reverts.
     private static bool MenuState()
     {
         var window = new MainWindow();
         var viewport = window.FindControl<ViewportControl>("Viewport")!;
         List<MenuItem> top = window.FindControl<Menu>("MainMenu")!.Items.OfType<MenuItem>().ToList();
         MenuItem edit = top.Single(item => (string?)item.Header == "Edit");
-        MenuItem camera = top.Single(item => (string?)item.Header == "Camera");
         MenuItem undo = window.MenuItemFor("Undo");
         MenuItem redo = window.MenuItemFor("Redo");
 
         edit.RaiseEvent(new RoutedEventArgs(MenuItem.SubmenuOpenedEvent));
         bool emptyDisabled = !undo.IsEnabled && !redo.IsEnabled;
-        viewport.ToggleGrid();
+        viewport.ApplyCameraPreset(2);
         edit.RaiseEvent(new RoutedEventArgs(MenuItem.SubmenuOpenedEvent));
-        bool undoEnabled = undo.IsEnabled && !redo.IsEnabled && (string?)undo.Header == "Undo Toggle grid";
+        bool undoEnabled = undo.IsEnabled && !redo.IsEnabled && (string?)undo.Header == "Undo 2-point preset";
         viewport.Undo();
         edit.RaiseEvent(new RoutedEventArgs(MenuItem.SubmenuOpenedEvent));
-        bool redoNamed = (string?)redo.Header == "Redo Toggle grid" && (string?)undo.Header == "Undo";
-
-        viewport.World.SaveRig("left_wall");
-        camera.RaiseEvent(new RoutedEventArgs(MenuItem.SubmenuOpenedEvent));
-        camera.RaiseEvent(new RoutedEventArgs(MenuItem.SubmenuOpenedEvent));
-        MenuItem rig = camera.Items.OfType<MenuItem>().Last();
-        bool listedOnce = camera.Items.OfType<MenuItem>().Count(item => item.Header is TextBlock) == 1 &&
-            rig.Header is TextBlock { Text: "left_wall" };
-        rig.Items.OfType<MenuItem>().Single(item => (string?)item.Header == "Delete")
-            .RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-        bool deleted = viewport.World.Rigs.Count == 0;
-        return emptyDisabled && undoEnabled && redoNamed && listedOnce && deleted;
+        bool redoNamed = (string?)redo.Header == "Redo 2-point preset" && (string?)undo.Header == "Undo";
+        bool pointsMenu = top.Any(item => (string?)item.Header == "Points") &&
+            window.MenuItemFor("Place next point") != null;
+        return emptyDisabled && undoEnabled && redoNamed && pointsMenu;
     }
 
     // No key runs two commands; the window's own commands are in the same table.
@@ -979,8 +937,8 @@ internal static class SelfTest
             var args = new KeyEventArgs
             {
                 RoutedEvent = InputElement.KeyDownEvent,
-                Key = Key.C,
-                KeyModifiers = KeyModifiers.Control | KeyModifiers.Alt
+                Key = Key.R,
+                KeyModifiers = KeyModifiers.Control | KeyModifiers.Shift
             };
             viewport.ProcessKey(args);
             return args.Handled && window.OwnedWindows.Count == 1;
@@ -1011,7 +969,7 @@ internal static class SelfTest
         viewport.RemoveReference();
         for (int i = 0; i < UndoStack.MaxDepth; i++)
         {
-            viewport.ToggleGrid();
+            viewport.ApplyCameraPreset(1 + i % 3);
         }
 
         return removed && restored && clearUndone && world.DisposedImageCount == 1;
@@ -1020,7 +978,7 @@ internal static class SelfTest
     private static bool OpenClearsHistory()
     {
         var viewport = new ViewportControl();
-        viewport.ToggleGrid();
+        viewport.ApplyCameraPreset(2);
         var opened = new WorldState();
         opened.VanishingPoints[0] = new VanishingPoint(new Vec2(5, 6), 0);
         viewport.LoadProject(opened, null);
@@ -1163,6 +1121,75 @@ internal static class SelfTest
         }
     }
 
+    // Points tool: a click on the empty plane places the next point; with a point selected it only
+    // unselects. The trace tool pulls a trace line with the left button.
+    private static bool ClickPlacesPoints()
+    {
+        var viewport = new ViewportControl();
+        var window = new Window { Width = 800, Height = 600, Content = viewport };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            World world = viewport.World;
+            Point Screen(double x, double y) =>
+                new((x + world.Camera.X) * world.Zoom, (y + world.Camera.Y) * world.Zoom);
+            void Click(double x, double y)
+            {
+                window.MouseDown(Screen(x, y), MouseButton.Left);
+                window.MouseUp(Screen(x, y), MouseButton.Left);
+            }
+
+            Click(-200, 0);
+            Click(200, 0);
+            bool two = VpAt(world, 0, -200, 0) && VpAt(world, 1, 200, 0) && world.SelectionIdx == -1 &&
+                viewport.History.UndoName == "Place next point";
+            Click(-200, 0);
+            bool selected = world.SelectionIdx == 0;
+            Click(0, 100);
+            bool onlyUnselected = world.SelectionIdx == -1 && world.VanishingPoints[2] == null;
+            Click(0, 100);
+            bool third = VpAt(world, 2, 0, 100);
+
+            viewport.ProcessKey(new KeyEventArgs { Key = Key.T });
+            bool traceTool = viewport.Tool == ToolKind.Trace;
+            window.MouseDown(Screen(-100, -100), MouseButton.Left);
+            window.MouseMove(Screen(100, -50));
+            window.MouseUp(Screen(100, -50), MouseButton.Left);
+            bool traced = world.TraceLines.Count == 1 && world.VanishingPoints[3] == null;
+            viewport.ProcessKey(new KeyEventArgs { Key = Key.Escape });
+            return two && selected && onlyUnselected && third && traceTool && traced && viewport.Tool == null;
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    // Grid, cone and palette are view state: no undo step, no unsaved flag, and undo keeps them.
+    // A key that needs a selected point says so instead of doing nothing.
+    private static bool ViewStateOutsideUndo()
+    {
+        var viewport = new ViewportControl();
+        World world = viewport.World;
+        viewport.ProcessKey(new KeyEventArgs { Key = Key.D1 });
+        world.MarkSaved();
+        int before = viewport.History.CanUndo ? 1 : 0;
+        viewport.ProcessKey(new KeyEventArgs { Key = Key.G });
+        viewport.ProcessKey(new KeyEventArgs { Key = Key.OemPlus });
+        viewport.ProcessKey(new KeyEventArgs { Key = Key.V });
+        viewport.ProcessKey(new KeyEventArgs { Key = Key.P, KeyModifiers = KeyModifiers.Control | KeyModifiers.Shift });
+        bool clean = !world.IsDirty && viewport.History.UndoName == "Drop vanishing point at cursor" && before == 1;
+        viewport.Undo();
+        bool kept = world.VanishingPoints[0] == null && world.ShowGrid && world.GridSz == 64 && world.ShowCone &&
+            world.PaletteName == "charcoal";
+
+        viewport.ProcessKey(new KeyEventArgs { Key = Key.Escape });
+        viewport.ProcessKey(new KeyEventArgs { Key = Key.Up });
+        bool prompted = world.StatusMessage?.Contains("select a point first") == true;
+        return clean && kept && prompted;
+    }
+
     private static bool ToolPickQuad()
     {
         var viewport = new ViewportControl();
@@ -1186,16 +1213,18 @@ internal static class SelfTest
             Click(100, -100);
             Click(100, 100);
             Click(-100, 100);
-            viewport.ProcessKey(new KeyEventArgs { Key = Key.Enter });
             bool corners = world.Subdivisions.Count == 1 &&
                 world.Subdivisions[0].Quad[2].X == 100 && world.Subdivisions[0].Quad[3].Y == 100;
+            viewport.ProcessKey(new KeyEventArgs { Key = Key.D3 });
+            viewport.ProcessKey(new KeyEventArgs { Key = Key.D5, KeyModifiers = KeyModifiers.Shift });
+            bool cells = world.Subdivisions[0].N == 3 && world.Subdivisions[0].M == 5 &&
+                viewport.History.UndoName == "Subdivision tool";
 
             // The same corners in Z order cross each other: refused, nothing to commit.
             Click(-100, -100);
             Click(100, -100);
             Click(-100, 100);
             Click(100, 100);
-            viewport.ProcessKey(new KeyEventArgs { Key = Key.Enter });
             bool crossingRefused = world.Subdivisions.Count == 1 &&
                 world.StatusMessage?.StartsWith("Corners refused") == true;
 
@@ -1211,7 +1240,7 @@ internal static class SelfTest
             bool facePicked = world.Ellipses.Count == 1 &&
                 BoxGeometry.Build(world.Boxes[0]).Faces.Any(boxFace =>
                     boxFace.SequenceEqual(world.Ellipses[0].Quad));
-            return corners && crossingRefused && facePicked;
+            return corners && cells && crossingRefused && facePicked;
         }
         finally
         {
@@ -1268,65 +1297,6 @@ internal static class SelfTest
         world.VanishingPoints[0]!.Density = int.MaxValue;
         bool fanClamped = GuideBuilder.FanDensity(world.VanishingPoints[0]!) == VanishingPoint.MaxDensity;
         return fileClamped && keyClamped && fanClamped;
-    }
-
-    private static bool RigManage()
-    {
-        var viewport = new ViewportControl();
-        var window = new Window { Content = viewport };
-        window.Show();
-        World world = viewport.World;
-        void Rename(string name, string newName)
-        {
-            Task rename = viewport.RenameRigAsync(name);
-            Window dialog = window.OwnedWindows.Single();
-            dialog.GetLogicalDescendants().OfType<TextBox>().Single().Text = newName;
-            dialog.GetLogicalDescendants().OfType<Button>().Single(button => (string?)button.Content == "Save")
-                .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Dispatcher.UIThread.RunJobs();
-        }
-
-        try
-        {
-            world.SaveRig("Front");
-            world.SaveRig("Side");
-            viewport.DeleteRig("side");
-            bool deleted = world.Rigs.Count == 1 && viewport.History.CanUndo;
-            viewport.Undo();
-            bool restored = world.Rigs.Count == 2 && world.FindRig("Side") == 1;
-
-            Rename("Front", "Top_down");
-            bool renamed = world.Rigs[0].Name == "Top_down";
-            Rename("Top_down", "side");
-            bool clashRefused = world.Rigs[0].Name == "Top_down" &&
-                world.StatusMessage == "A rig named side already exists.";
-            return deleted && restored && renamed && clashRefused;
-        }
-        finally
-        {
-            CloseDialogs(window);
-            window.Close();
-        }
-    }
-
-    private static bool RigCancelSilent()
-    {
-        var viewport = new ViewportControl();
-        var window = new Window { Content = viewport };
-        window.Show();
-        try
-        {
-            Task save = viewport.SaveRigAsync();
-            bool asked = window.OwnedWindows.Count == 1;
-            CloseDialogs(window);
-            return asked && save.IsCompleted && viewport.World.StatusMessage == null &&
-                viewport.World.Rigs.Count == 0;
-        }
-        finally
-        {
-            CloseDialogs(window);
-            window.Close();
-        }
     }
 
     private static bool KeyModifiersExact()
@@ -1783,7 +1753,7 @@ internal static class SelfTest
     private static World BuildShapesWorld()
     {
         var world = new World();
-        world.SetPalette("atelier");
+        world.SetPalette("ink");
         world.ShowGrid = false;
         world.Zoom = 1;
         world.Camera = new Vec2(320, 240);
@@ -1892,7 +1862,7 @@ internal static class SelfTest
     private static World PaletteScene()
     {
         var world = new World();
-        world.SetPalette("atelier");
+        world.SetPalette("ink");
         world.ShowGrid = true;
         world.GridSz = 40;
         world.VanishingPoints[0] = new VanishingPoint(new Vec2(-300, -40), 0);

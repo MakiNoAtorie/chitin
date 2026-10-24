@@ -135,29 +135,22 @@ public static class GuideBuilder
         }
 
         int limit = Math.Max(world.PicturePlaneWidth, world.PicturePlaneHeight);
-
         double x = -world.PicturePlaneWidthHalf + world.GridSz;
-        if (world.GridStyle == 0 || world.GridStyle == 1)
+        double y = -world.PicturePlaneHeightHalf + world.GridSz;
+        for (int i = 0; i < limit; i += world.GridSz)
         {
-            for (int i = 0; i < limit; i += world.GridSz)
-            {
-                prims.Add(Prim.Line(styles.GridPen,
-                    new Vec2(x, -world.PicturePlaneHeightHalf),
-                    new Vec2(x, world.PicturePlaneHeightHalf), plane));
-                x += world.GridSz;
-            }
+            prims.Add(Prim.Line(styles.GridPen,
+                new Vec2(x, -world.PicturePlaneHeightHalf),
+                new Vec2(x, world.PicturePlaneHeightHalf), plane));
+            x += world.GridSz;
         }
 
-        double y = -world.PicturePlaneHeightHalf + world.GridSz;
-        if (world.GridStyle == 0 || world.GridStyle == 2)
+        for (int i = 0; i < limit; i += world.GridSz)
         {
-            for (int i = 0; i < limit; i += world.GridSz)
-            {
-                prims.Add(Prim.Line(styles.GridPen,
-                    new Vec2(-world.PicturePlaneWidthHalf, y),
-                    new Vec2(world.PicturePlaneWidthHalf, y), plane));
-                y += world.GridSz;
-            }
+            prims.Add(Prim.Line(styles.GridPen,
+                new Vec2(-world.PicturePlaneWidthHalf, y),
+                new Vec2(world.PicturePlaneWidthHalf, y), plane));
+            y += world.GridSz;
         }
     }
 

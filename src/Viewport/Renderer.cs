@@ -56,7 +56,17 @@ public static class Renderer
                 world.Overlay?.DrawOver(context);
             }
         }
+
+        // An empty plane says how to start.
+        if (interactive && world.Overlay == null && world.VanishingPoints.All(point => point == null))
+        {
+            FormattedText hint = Chrome.Text(EmptyHint, 12, styles.MutedText);
+            context.DrawText(hint, new Point(camera.X * styles.Zoom - hint.Width / 2,
+                camera.Y * styles.Zoom - hint.Height / 2));
+        }
     }
+
+    internal const string EmptyHint = "Click to place point 1, or choose Camera › 2-point preset";
 
     private static void DrawUnder(DrawingContext context, World world, Styles styles, RenderMode mode)
     {

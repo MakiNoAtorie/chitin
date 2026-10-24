@@ -17,6 +17,7 @@ public class ViewportControl : Control
     public World World { get; } = new();
 
     private bool _centered;
+    private bool _placeOnClick;
     private bool _spaceHeld;
     private Vec2 _mouseWorld = new();
     private Bitmap? _clipboardBitmap;
@@ -67,7 +68,10 @@ public class ViewportControl : Control
     // The pointer in viewport pixels while it is over the viewport.
     public Point? PointerPosition { get; private set; }
 
-    public ToolKind? Tool => _construction?.Kind;
+    // The active tool; null is the points tool.
+    public ToolKind? Tool => _construction?.Kind ?? (_traceTool ? ToolKind.Trace : null);
+
+    private bool _traceTool;
 
     public void CenterCamera()
     {
@@ -118,13 +122,17 @@ public class ViewportControl : Control
             return;
         }
 
-        else if (kind == PointerUpdateKind.LeftButtonPressed)
+        else if (kind == PointerUpdateKind.LeftButtonPressed && !_traceTool)
         {
-            World.SelectionIdx = World.PointAt(_mouseWorld, GrabRadius / World.Zoom);
+            // A click on the empty plane places the next point; with a point selected it only unselects.
+            int hit = World.PointAt(_mouseWorld, GrabRadius / World.Zoom);
+            _placeOnClick = hit < 0 && World.SelectionIdx < 0;
+            World.SelectionIdx = hit;
             World.BumpRevision(false);
             mode = new VanishingPointMode(World, () => PushUndo("Move vanishing point"));
         }
-        else if (kind == PointerUpdateKind.RightButtonPressed)
+        else if (kind == PointerUpdateKind.RightButtonPressed ||
+                 (kind == PointerUpdateKind.LeftButtonPressed && _traceTool))
         {
             mode = new TraceLineMode(World, () => PushUndo("Add trace line"));
         }
@@ -163,7 +171,7 @@ public class ViewportControl : Control
     private void UpdateHover()
     {
         int hover = World.Overlay is VanishingPointMode ? World.SelectionIdx
-            : World.Overlay != null || _spaceHeld ? -1
+            : World.Overlay != null || _spaceHeld || _traceTool ? -1
             : World.PointAt(_mouseWorld, GrabRadius / World.Zoom);
         if (hover != World.HoverIdx)
         {
@@ -202,6 +210,12 @@ public class ViewportControl : Control
     {
         base.OnPointerReleased(e);
 
+        if (_placeOnClick && World.Overlay is VanishingPointMode { HasMoved: false })
+        {
+            PlaceNextPoint(_mouseWorld);
+        }
+
+        _placeOnClick = false;
         World.Overlay?.MouseUp();
         World.Overlay = _construction;
         e.Pointer.Capture(null);
@@ -306,22 +320,17 @@ public class ViewportControl : Control
         const KeyModifiers shift = KeyModifiers.Shift;
         const KeyModifiers alt = KeyModifiers.Alt;
         string group = "";
-        bool inMenu = false;
         bool separator = false;
 
-        void Group(string name, bool menu)
-        {
-            group = name;
-            inMenu = menu;
-        }
-
+        void Group(string name) => group = name;
         void Sep() => separator = true;
         static KeyGesture K(Key key, KeyModifiers modifiers = KeyModifiers.None) => new(key, modifiers);
 
         void Add(string name, KeyGesture[] keys, Func<int, Task> run, string? gesture = null, bool indexed = false)
         {
+            // An indexed command needs its digit, so it is not in a menu; F1 lists it.
             AddCommand(new Command(name, group, gesture ?? (keys.Length > 0 ? Chitin.Commands.Label(keys[0]) : ""),
-                keys, run, inMenu, separator, indexed));
+                keys, run, !indexed, separator, indexed));
             separator = false;
         }
 
@@ -331,13 +340,6 @@ public class ViewportControl : Control
             return Task.CompletedTask;
         }, gesture);
         void OnAsync(string name, KeyGesture[] keys, Func<Task> command) => Add(name, keys, _ => command());
-        // Undo snapshot before the change, dirty flag after it.
-        void Edit(string name, KeyGesture[] keys, Action change, string? gesture = null) => On(name, keys, () =>
-        {
-            PushUndo(name);
-            change();
-            World.BumpRevision();
-        }, gesture);
         void Digits(string name, KeyModifiers modifiers, Action<int> action, string gesture)
         {
             KeyGesture[] keys = Enumerable.Range(0, 9).Select(i => K(Key.D1 + i, modifiers)).ToArray();
@@ -352,7 +354,7 @@ public class ViewportControl : Control
         KeyGesture[] WithShift(params Key[] keys) =>
             keys.SelectMany(key => new[] { K(key), K(key, shift) }).ToArray();
 
-        Group("File", true);
+        Group("File");
         OnAsync("New document", new[] { K(Key.N, ctrl) }, NewDocumentAsync);
         OnAsync("Open project...", new[] { K(Key.O, ctrl) }, OpenProjectAsync);
         OnAsync("Save project", new[] { K(Key.S, ctrl) }, () => SaveProjectAsync(false));
@@ -360,76 +362,62 @@ public class ViewportControl : Control
         Sep();
         OnAsync("Export SVG or PNG...", new[] { K(Key.E, ctrl) }, ExportAsync);
 
-        Group("Edit", true);
+        Group("Edit");
         On("Undo", new[] { K(Key.Z, ctrl) }, Undo);
         On("Redo", new[] { K(Key.Y, ctrl), K(Key.Z, ctrl | shift) }, Redo);
         Sep();
-        OnAsync("Copy plane", new[] { K(Key.C, ctrl) }, () => CopyPlaneAsync(false));
-        OnAsync("Copy plane in grayscale", new[] { K(Key.C, ctrl | shift) }, () => CopyPlaneAsync(true));
+        OnAsync("Copy plane as image", new[] { K(Key.C, ctrl | shift) }, CopyPlaneAsync);
         Sep();
-        OnAsync("Resize document...", new[] { K(Key.C, ctrl | alt) }, ResizeDocumentAsync);
-        On("Clear document", new[] { K(Key.R, ctrl) }, ClearDocument);
+        OnAsync("Resize document...", new[] { K(Key.R, ctrl | shift) }, ResizeDocumentAsync);
+        OnAsync("Clear document...", Array.Empty<KeyGesture>(), ClearDocumentAsync);
 
-        Group("View", true);
+        Group("View");
         On("Toggle grid", new[] { K(Key.G) }, ToggleGrid);
-        On("Cycle grid style", new[] { K(Key.G, ctrl) }, CycleGridStyle);
-        Edit("Larger grid", WithShift(Key.OemPlus, Key.Add), () => World.SetGridSize(World.GridSz * 2));
-        Edit("Smaller grid", WithShift(Key.OemMinus, Key.Subtract), () => World.SetGridSize(World.GridSz / 2));
+        On("Larger grid", WithShift(Key.OemPlus, Key.Add), () => World.SetGridSize(World.GridSz * 2));
+        On("Smaller grid", WithShift(Key.OemMinus, Key.Subtract), () => World.SetGridSize(World.GridSz / 2));
         Sep();
         On("Cone of vision", new[] { K(Key.V) }, ToggleCone);
-        On("Cycle palette", new[] { K(Key.P, ctrl | shift) }, CyclePalette);
-        foreach (Palette palette in Palette.BuiltIns)
-        {
-            string paletteName = palette.Name;
-            On($"Palette {paletteName}", Array.Empty<KeyGesture>(), () => UsePalette(paletteName));
-        }
-
-        Edit("Rotate palette colours", new[] { K(Key.S) }, World.RotatePalette);
+        On("Dark palette", new[] { K(Key.P, ctrl | shift) }, ToggleDarkPalette);
         Sep();
         On("Centre view", new[] { K(Key.Home) }, CenterCamera);
 
-        Group("Tools", true);
+        Group("Tools");
+        On("Leave tool / unselect", new[] { K(Key.Escape) }, Escape);
+        On("Trace tool", new[] { K(Key.T) }, () => ToggleTool(ToolKind.Trace));
         On("Box tool", new[] { K(Key.B) }, () => ToggleTool(ToolKind.Box));
         On("Subdivision tool", new[] { K(Key.D) }, () => ToggleTool(ToolKind.Subdivision));
         On("Ellipse tool", new[] { K(Key.E) }, () => ToggleTool(ToolKind.Ellipse));
-        On("Leave tool / unselect", new[] { K(Key.Escape) }, Escape);
         Sep();
-        On("Level points 1 and 2", new[] { K(Key.H) }, LevelHorizon);
         On("Delete last trace line", new[] { K(Key.Back) }, () => RemoveTraceLines(all: false));
         On("Delete all trace lines", new[] { K(Key.Back, alt) }, () => RemoveTraceLines(all: true));
 
-        Group("Points", false);
+        Group("Points");
+        On("Place next point", Array.Empty<KeyGesture>(), () => PlaceNextPoint(new Vec2()));
+        On("Delete selected point", new[] { K(Key.Delete) }, DeleteSelected);
+        Sep();
+        On("Raise density", new[] { K(Key.Up) }, () => ChangeDensity(4), "Up");
+        On("Lower density", new[] { K(Key.Down) }, () => ChangeDensity(-4), "Down");
+        On("Level points 1 and 2", new[] { K(Key.H) }, LevelHorizon);
         Digits("Drop vanishing point at cursor", none, DropPoint, "1-9");
         Digits("Select vanishing point", ctrl, SelectPoint, "Ctrl+1-9");
         Digits("Delete vanishing point", alt, DeletePoint, "Alt+1-9");
         Digits("Drop point at trace crossing", ctrl | shift, DropPointAtCrossing, "Ctrl+Shift+1-9");
-        On("Raise density", new[] { K(Key.Up) }, () => ChangeDensity(4), "Up");
-        On("Lower density", new[] { K(Key.Down) }, () => ChangeDensity(-4), "Down");
-        On("Flip point vertically", new[] { K(Key.Up, ctrl), K(Key.Down, ctrl) },
-            () => EditSelected("Flip point vertically", point => point.Pos = new Vec2(point.Pos.X, -point.Pos.Y)),
-            "Ctrl+Up / Down");
-        On("Flip point horizontally", new[] { K(Key.Left, ctrl), K(Key.Right, ctrl) },
-            () => EditSelected("Flip point horizontally", point => point.Pos = new Vec2(-point.Pos.X, point.Pos.Y)),
-            "Ctrl+Left / Right");
 
-        Group("Reference", true);
+        Group("Reference");
         OnAsync("Load reference image...", new[] { K(Key.I, ctrl) }, LoadReferenceAsync);
         OnAsync("Paste reference image", new[] { K(Key.V, ctrl) }, PasteBackgroundAsync);
         On("Show / hide reference", new[] { K(Key.I) }, ToggleReference);
         On("Remove reference", new[] { K(Key.I, alt) }, RemoveReference);
         OnAsync("Reference settings...", new[] { K(Key.I, ctrl | alt) }, ShowReferenceDialogAsync);
-        Edit("Lower reference opacity", WithShift(Key.OemOpenBrackets), () => ChangeReferenceOpacity(-0.1));
-        Edit("Raise reference opacity", WithShift(Key.OemCloseBrackets), () => ChangeReferenceOpacity(0.1));
+        On("Lower reference opacity", WithShift(Key.OemOpenBrackets), () => ChangeReferenceOpacity(-0.1));
+        On("Raise reference opacity", WithShift(Key.OemCloseBrackets), () => ChangeReferenceOpacity(0.1));
 
-        Group("Camera", true);
+        Group("Camera");
         for (int points = 1; points <= 3; points++)
         {
             int count = points;
             On($"{count}-point preset", Array.Empty<KeyGesture>(), () => ApplyCameraPreset(count));
         }
-
-        Sep();
-        OnAsync("Save rig...", Array.Empty<KeyGesture>(), SaveRigAsync);
     }
 
     internal bool HasKey(Key key, KeyModifiers modifiers)
@@ -501,7 +489,7 @@ public class ViewportControl : Control
 
     private void Escape()
     {
-        if (_construction != null)
+        if (Tool != null)
         {
             ExitTool();
             return;
@@ -511,7 +499,7 @@ public class ViewportControl : Control
         World.SelectionIdx = -1;
     }
 
-    // One undo step for a change to the selected point; with no selection, nothing happens.
+    // One undo step for a change to the selected point; with no selection, a prompt says why not.
     private void EditSelected(string name, Action<VanishingPoint> change)
     {
         if (World.SelectionIdx > -1 && World.VanishingPoints[World.SelectionIdx] is { } point)
@@ -520,12 +508,17 @@ public class ViewportControl : Control
             change(point);
             World.BumpRevision();
         }
+        else
+        {
+            World.SetStatus($"{name}: select a point first (click it, or press Ctrl+1-9).");
+        }
     }
 
     private void LevelHorizon()
     {
         if (World.VanishingPoints[0] == null && World.VanishingPoints[1] == null)
         {
+            World.SetStatus("Level points 1 and 2: place point 1 or 2 first.");
             return;
         }
 
@@ -584,6 +577,32 @@ public class ViewportControl : Control
         InvalidateVisual();
     }
 
+    // A click on the empty plane with the points tool, or Points > Place next point (at the centre).
+    internal void PlaceNextPoint(Vec2 position)
+    {
+        int index = Array.IndexOf(World.VanishingPoints, null);
+        if (index < 0)
+        {
+            World.SetStatus("All nine points are placed: drag one to move it.");
+            return;
+        }
+
+        PushUndo("Place next point");
+        World.VanishingPoints[index] = new VanishingPoint(position, 0);
+        World.BumpRevision();
+    }
+
+    private void DeleteSelected()
+    {
+        if (World.SelectionIdx < 0)
+        {
+            World.SetStatus("Delete selected point: select a point first (click it, or press Ctrl+1-9).");
+            return;
+        }
+
+        DeletePoint(World.SelectionIdx);
+    }
+
     private void SelectPoint(int index)
     {
         World.SelectionIdx = World.VanishingPoints[index] != null ? index : -1;
@@ -628,9 +647,17 @@ public class ViewportControl : Control
 
     private void ToggleTool(ToolKind kind)
     {
-        if (_construction?.Kind == kind)
+        if (Tool == kind)
         {
             ExitTool();
+            return;
+        }
+
+        ExitTool();
+        if (kind == ToolKind.Trace)
+        {
+            _traceTool = true;
+            UpdateHover();
             return;
         }
 
@@ -642,18 +669,20 @@ public class ViewportControl : Control
             _ => throw new ArgumentOutOfRangeException(nameof(kind))
         };
         World.Overlay = _construction;
+        UpdateHover();
     }
 
     private void ExitTool()
     {
         _construction = null;
+        _traceTool = false;
         World.Overlay = null;
     }
 
-    // Clear keeps the size, palette, rigs, cone and reference settings; New resets everything.
+    // Clear keeps the size, view, reference settings and file; New resets everything.
     public void ClearDocument()
     {
-        PushUndo("Clear document");
+        PushUndo("Clear document...");
         ExitTool();
         Array.Clear(World.VanishingPoints);
         World.SelectionIdx = -1;
@@ -661,9 +690,26 @@ public class ViewportControl : Control
         World.Boxes.Clear();
         World.Subdivisions.Clear();
         World.Ellipses.Clear();
-        World.ShowGrid = false;
         World.SetReferenceImage(null);
         InvalidateVisual();
+    }
+
+    private async Task ClearDocumentAsync()
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            return;
+        }
+
+        if (await ChooseAsync(owner, "Clear document", 420, new[] { "Clear", "Cancel" },
+                new TextBlock
+                {
+                    Text = "Remove every point, trace line, shape and the reference image? Undo brings them back.",
+                    TextWrapping = TextWrapping.Wrap
+                }) == 0)
+        {
+            ClearDocument();
+        }
     }
 
     public void NewDocument()
@@ -686,7 +732,7 @@ public class ViewportControl : Control
         Step(History.Redo(World.Capture()));
     }
 
-    // Zoom and pan are view state, not history: an undo step keeps the current view.
+    // Zoom, pan, grid, cone and palette are view state, not history: an undo step keeps them.
     private void Step(WorldState? state)
     {
         if (state == null)
@@ -694,12 +740,12 @@ public class ViewportControl : Control
             return;
         }
 
-        double zoom = World.Zoom;
-        Vec2 camera = World.Camera;
+        WorldState view = World.Capture();
         ExitTool();
         World.Restore(state);
-        World.Zoom = zoom;
-        World.Camera = camera;
+        World.RestoreView(view);
+        World.Zoom = view.Zoom;
+        World.Camera = view.Camera;
         World.ZoomChanged();
         InvalidateVisual();
     }
@@ -711,45 +757,22 @@ public class ViewportControl : Control
 
     public void ToggleGrid()
     {
-        PushUndo("Toggle grid");
         World.ShowGrid = !World.ShowGrid;
-        World.BumpRevision();
-        InvalidateVisual();
-    }
-
-    public void CycleGridStyle()
-    {
-        PushUndo("Cycle grid style");
-        World.GridStyle = (World.GridStyle + 1) % 3;
-        World.BumpRevision();
+        World.BumpRevision(false);
         InvalidateVisual();
     }
 
 
     public void ToggleCone()
     {
-        PushUndo("Cone of vision");
         World.ShowCone = !World.ShowCone;
-        World.BumpRevision();
+        World.BumpRevision(false);
         InvalidateVisual();
     }
 
-    public void UsePalette(string name)
+    public void ToggleDarkPalette()
     {
-        if (string.Equals(World.PaletteName, name, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        PushUndo($"Palette {name}");
-        World.SetPalette(name);
-        InvalidateVisual();
-    }
-
-    public void CyclePalette()
-    {
-        PushUndo("Cycle palette");
-        World.CyclePalette();
+        World.SetPalette(World.PaletteName == Palette.Charcoal.Name ? Palette.InkPalette.Name : Palette.Charcoal.Name);
         InvalidateVisual();
     }
 
@@ -759,110 +782,6 @@ public class ViewportControl : Control
         ExitTool();
         World.ApplyPreset(points);
         InvalidateVisual();
-    }
-
-    public void RecallRig(string name)
-    {
-        if (World.FindRig(name) < 0)
-        {
-            World.SetError($"Rig not found: {name}");
-        }
-        else
-        {
-            PushUndo($"Recall rig {name}");
-            ExitTool();
-            World.ApplyRig(name);
-        }
-
-        InvalidateVisual();
-    }
-
-    public void DeleteRig(string name)
-    {
-        if (World.FindRig(name) >= 0)
-        {
-            PushUndo($"Delete rig {name}");
-            World.DeleteRig(name);
-            World.SetStatus($"Deleted rig {name}");
-        }
-
-        InvalidateVisual();
-    }
-
-    public async Task RenameRigAsync(string name)
-    {
-        if (TopLevel.GetTopLevel(this) is not Window owner || World.FindRig(name) < 0)
-        {
-            return;
-        }
-
-        string? newName = (await PromptForNameAsync(owner, "Rename Rig", name))?.Trim();
-        if (newName == null)
-        {
-            return;
-        }
-
-        int other = World.FindRig(newName);
-        if (newName.Length == 0)
-        {
-            World.SetStatus("Rig name cannot be empty.");
-        }
-        else if (other >= 0 && other != World.FindRig(name))
-        {
-            World.SetStatus($"A rig named {newName} already exists.");
-        }
-        else
-        {
-            PushUndo($"Rename rig {name}");
-            World.RenameRig(name, newName);
-            World.SetStatus($"Renamed rig {name} to {newName}");
-        }
-
-        InvalidateVisual();
-    }
-
-    public async Task SaveRigAsync()
-    {
-        try
-        {
-            if (TopLevel.GetTopLevel(this) is not Window owner)
-            {
-                return;
-            }
-
-            string? name = await PromptForNameAsync(owner, "Save Rig",
-                $"Rig {World.Rigs.Count + 1}");
-            if (name == null)
-            {
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                World.SetStatus("Rig name cannot be empty.");
-                return;
-            }
-
-            PushUndo("Save rig...");
-            World.SaveRig(name);
-            World.SetStatus($"Saved rig {name}");
-        }
-        catch (Exception exception)
-        {
-            World.SetError($"Save rig failed: {exception.Message}");
-        }
-        finally
-        {
-            InvalidateVisual();
-        }
-    }
-
-    private static async Task<string?> PromptForNameAsync(Window owner, string title, string initial)
-    {
-        var input = new TextBox { Text = initial };
-        bool saved = await ChooseAsync(owner, title, 360, new[] { "Save", "Cancel" },
-            new TextBlock { Text = "Rig name" }, input) == 0;
-        return saved ? input.Text : null;
     }
 
     // A small modal dialog: the body, then one button per choice. The first choice is the default
@@ -1360,11 +1279,11 @@ public class ViewportControl : Control
         InvalidateVisual();
     }
 
-    private async Task CopyPlaneAsync(bool grayscale)
+    private async Task CopyPlaneAsync()
     {
         try
         {
-            Bitmap bitmap = RenderPlane(grayscale);
+            Bitmap bitmap = RenderPlane();
             IClipboard? clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
             if (clipboard == null)
             {
@@ -1386,6 +1305,7 @@ public class ViewportControl : Control
             }
 
             previous?.Dispose();
+            World.SetStatus("Copied the plane as an image.");
         }
         catch (Exception exception)
         {
@@ -1397,12 +1317,12 @@ public class ViewportControl : Control
         }
     }
 
-    internal Bitmap RenderPlane(bool grayscale = false)
+    internal Bitmap RenderPlane()
     {
-        return RenderPlane(World.PicturePlaneWidth, World.PicturePlaneHeight, false, grayscale);
+        return RenderPlane(World.PicturePlaneWidth, World.PicturePlaneHeight, false);
     }
 
-    internal Bitmap RenderPlane(int width, int height, bool transparent, bool grayscale = false)
+    internal Bitmap RenderPlane(int width, int height, bool transparent)
     {
         double zoom = (double)width / World.PicturePlaneWidth;
         var renderTarget = new RenderTargetBitmap(new PixelSize(width, height), new Vector(96, 96));
@@ -1413,41 +1333,7 @@ public class ViewportControl : Control
                 World.StylesAt(zoom), new Vec2(width / 2.0 / zoom, height / 2.0 / zoom));
         }
 
-        if (!grayscale)
-        {
-            return renderTarget;
-        }
-
-        using (renderTarget)
-        {
-            return Grayscale(renderTarget);
-        }
+        return renderTarget;
     }
 
-    private static WriteableBitmap Grayscale(RenderTargetBitmap source)
-    {
-        var result = new WriteableBitmap(source.PixelSize, new Vector(96, 96),
-            PixelFormat.Bgra8888, AlphaFormat.Premul);
-
-        using (ILockedFramebuffer framebuffer = result.Lock())
-        {
-            source.CopyPixels(framebuffer, AlphaFormat.Premul);
-
-            int length = framebuffer.RowBytes * framebuffer.Size.Height;
-            var pixels = new byte[length];
-            Marshal.Copy(framebuffer.Address, pixels, 0, length);
-
-            for (int i = 0; i + 3 < length; i += 4)
-            {
-                byte gray = (byte)(0.299 * pixels[i + 2] + 0.587 * pixels[i + 1] + 0.114 * pixels[i]);
-                pixels[i] = gray;
-                pixels[i + 1] = gray;
-                pixels[i + 2] = gray;
-            }
-
-            Marshal.Copy(pixels, 0, framebuffer.Address, length);
-        }
-
-        return result;
-    }
 }
