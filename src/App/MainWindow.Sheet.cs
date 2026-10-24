@@ -51,7 +51,8 @@ public partial class MainWindow
             ToolKind.Box => "Drag width, then depth, then height · 1 / 2 force an axis · Esc leaves",
             ToolKind.Subdivision => "Click a box face or four corners · 2-9 set its cells (Shift: rows) · Esc leaves",
             ToolKind.Ellipse => "Click a box face or four corners, then drag from the centre · Esc leaves",
-            _ => "Click to place a point · drag a point to move it · right-drag pulls a trace line · Space+drag pans"
+            _ => "Click to place a point · drag a point to move it · right-drag pulls a trace line · " +
+                 "Space+drag pans, Ctrl+Space+drag zooms"
         };
     }
 
@@ -81,6 +82,8 @@ public partial class MainWindow
         FindBox.AddHandler(KeyDownEvent, FindBox_KeyDown, RoutingStrategies.Tunnel);
 
         ZoomButton.Click += (_, _) => RunAsync(() => Viewport.RunCommandAsync("Centre view"));
+        ZoomInButton.Click += (_, _) => RunAsync(() => Viewport.RunCommandAsync("Zoom in"));
+        ZoomOutButton.Click += (_, _) => RunAsync(() => Viewport.RunCommandAsync("Zoom out"));
         Viewport.ViewChanged += ScheduleChrome;
         Viewport.World.StatusChanged += ScheduleChrome;
         Viewport.CurrentFileChanged += ScheduleChrome;

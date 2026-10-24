@@ -69,6 +69,7 @@ public static class Commands
             new("Space + drag", "Pan (middle drag too)"),
             new("Wheel", "Pan (Shift: sideways)"),
             new("Ctrl + wheel", "Zoom about the cursor"),
+            new("Ctrl + Space + drag", "Zoom about the press point (right or up: in)"),
             new("Right drag", "Create a trace line (2 max; T tool: left drag)"),
             new("+ Ctrl", "Snap to 5 degree increments", 32),
             new("+ Shift", "Snap to 15 degree increments", 32),

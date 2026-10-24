@@ -101,10 +101,19 @@
     <!-- Foot: the tool hint and the last prompt or error on the left, readouts on the right. -->
     <Border Grid.Row="3" Grid.ColumnSpan="4" BorderBrush="{DynamicResource Ink}" BorderThickness="0,1,0,0">
       <DockPanel Margin="10,0,0,0">
-        <Button x:Name="ZoomButton" DockPanel.Dock="Right" Classes="cell" Padding="10,0" Width="70"
-                HorizontalContentAlignment="Center" BorderThickness="1,0,0,0"
+        <!-- Zoom out, the zoom (a click fits the plane), zoom in: tappable with a stylus. -->
+        <Button x:Name="ZoomInButton" DockPanel.Dock="Right" Classes="cell" Width="32"
+                HorizontalContentAlignment="Center" ToolTip.Tip="Zoom in (Ctrl+=)" AutomationProperties.Name="Zoom in">
+          <TextBlock Text="+" FontWeight="Bold" />
+        </Button>
+        <Button x:Name="ZoomButton" DockPanel.Dock="Right" Classes="cell" Padding="4,0" Width="62"
+                HorizontalContentAlignment="Center"
                 ToolTip.Tip="Fit the plane in view (Home)" AutomationProperties.Name="Zoom; fit the plane">
           <TextBlock x:Name="ZoomText" FontWeight="Bold" />
+        </Button>
+        <Button x:Name="ZoomOutButton" DockPanel.Dock="Right" Classes="cell" Width="32" BorderThickness="1,0,0,0"
+                HorizontalContentAlignment="Center" ToolTip.Tip="Zoom out (Ctrl+-)" AutomationProperties.Name="Zoom out">
+          <TextBlock Text="-" FontWeight="Bold" />
         </Button>
         <TextBlock x:Name="Readout" DockPanel.Dock="Right" Margin="12,0" VerticalAlignment="Center" />
         <Border x:Name="MessageMark" DockPanel.Dock="Left" Width="8" Height="8" Margin="0,0,6,0"

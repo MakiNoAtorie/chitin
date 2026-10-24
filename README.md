@@ -46,6 +46,9 @@ menu item shows its shortcut. The essentials:
 - **Points panel** (right; `Ctrl+K` hides it): type a point's X and Y, step its density, delete it.
 - **Navigate**: wheel or two-finger scroll pans, `Ctrl`+wheel or pinch zooms, `Space`+drag or
   middle-drag pans, `Home` fits the plane.
+- **Zoom with a stylus**: `Ctrl+=` / `Ctrl+-` zoom in and out, `Ctrl+0` shows 100 %,
+  `Ctrl`+`Space`+drag zooms (right or up zooms in), and the `-` / `+` cells beside the zoom in the
+  bottom-right corner can be tapped.
 - **Trace lines**: `T` and drag, or right-drag in any tool (`Ctrl` snaps 5°, `Shift` 15°).
   `Ctrl+Shift+1`-`9` drops a point where the two lines cross. `Backspace` deletes the last line.
 - **Box** (`B`): three drags set width, depth and height along the vanishing points (`1`/`2` force

@@ -481,6 +481,7 @@ internal static class SelfTest
             Check("confirm_discard", ConfirmBeforeDiscard());
             Check("pointer_undo", PointerUndo());
             Check("pointer_navigation", PointerNavigation());
+            Check("stylus_zoom", StylusZoom());
             Check("click_places_points", ClickPlacesPoints());
             Check("view_state_outside_undo", ViewStateOutsideUndo());
             Check("boxes_follow_points", BoxesFollowPoints());
@@ -1115,6 +1116,56 @@ internal static class SelfTest
             window.KeyRelease(Key.Space, RawInputModifiers.None, PhysicalKey.Space, " ");
             bool spacePans = world.Camera.X > camera.X && VpAt(world, 1, 6, 0) && !viewport.History.CanUndo;
             return hovered && nearest && wheelPans && ctrlZooms && spacePans;
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    // Zoom without a wheel: Ctrl+= / Ctrl+- / Ctrl+0 about the centre, the foot's - / + cells, and
+    // Ctrl+Space+drag about the press point. None is an undo step, and the drag places no point.
+    private static bool StylusZoom()
+    {
+        var window = new MainWindow { Width = 1000, Height = 700 };
+        window.Show();
+        try
+        {
+            var viewport = window.FindControl<ViewportControl>("Viewport")!;
+            World world = viewport.World;
+            window.CaptureRenderedFrame()?.Dispose();
+            Vec2 At(Point screen) => new(screen.X / world.Zoom - world.Camera.X, screen.Y / world.Zoom - world.Camera.Y);
+            var centre = new Point(viewport.Bounds.Width / 2, viewport.Bounds.Height / 2);
+            Vec2 middle = At(centre);
+            double start = world.Zoom;
+            void Key(Key key) => viewport.ProcessKey(new KeyEventArgs { Key = key, KeyModifiers = KeyModifiers.Control });
+
+            Key(Avalonia.Input.Key.OemPlus);
+            bool zoomedIn = Math.Abs(world.Zoom - start * 1.25) < 1e-9 && At(centre).DistFrom(middle) < 1e-6;
+            Key(Avalonia.Input.Key.OemMinus);
+            bool zoomedOut = Math.Abs(world.Zoom - start) < 1e-9;
+            Key(Avalonia.Input.Key.D0);
+            bool actual = world.Zoom == 1;
+
+            window.FindControl<Button>("ZoomInButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            bool buttonIn = Math.Abs(world.Zoom - 1.25) < 1e-9;
+            window.FindControl<Button>("ZoomOutButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            bool buttonOut = Math.Abs(world.Zoom - 1) < 1e-9;
+
+            // Viewport coordinates for the world maths, window coordinates for the pointer.
+            var anchor = new Point(centre.X - 80, centre.Y + 40);
+            Vec2 under = At(anchor);
+            Point press = viewport.TranslatePoint(anchor, window)!.Value;
+            viewport.Focus();
+            window.KeyPress(Avalonia.Input.Key.Space, RawInputModifiers.Control, PhysicalKey.Space, " ");
+            window.MouseDown(press, MouseButton.Left, RawInputModifiers.Control);
+            window.MouseMove(new Point(press.X + 50, press.Y), RawInputModifiers.Control);
+            window.MouseUp(new Point(press.X + 50, press.Y), MouseButton.Left, RawInputModifiers.Control);
+            window.KeyRelease(Avalonia.Input.Key.Space, RawInputModifiers.Control, PhysicalKey.Space, " ");
+            bool dragged = Math.Abs(world.Zoom - Math.Exp(0.5)) < 1e-9 && At(anchor).DistFrom(under) < 1e-6 &&
+                world.VanishingPoints.All(point => point == null);
+            return zoomedIn && zoomedOut && actual && buttonIn && buttonOut && dragged &&
+                !viewport.History.CanUndo && !world.IsDirty;
         }
         finally
         {

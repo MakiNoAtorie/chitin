@@ -173,8 +173,8 @@ The window is one layout with no modes (`MainWindow.axaml`, `MainWindow.Sheet.cs
   colour; an error is bold) or else "Trace lines cross" when the two trace lines intersect, then
   the active tool's hint, trimmed; on the right, the selected point (`VP n  x, y`, and its density
   when not automatic), the cone readout when the cone is on (`cone FOV° · d D`, or that it needs
-  points 1 and 2 either side of the centre), and the zoom percentage as a cell that runs Centre
-  view.
+  points 1 and 2 either side of the centre), then `-`, the zoom percentage and `+`: the outer cells run
+  Zoom out and Zoom in, the percentage runs Centre view.
 - Find (`Ctrl+F`): a field and the matching commands in a 440 px box over the top of the viewport
   (§9).
 - Keys and gestures (`F1`, Help menu): a dialog listing `Commands.HelpRows`: the pointer gestures,
@@ -327,9 +327,13 @@ Mouse (on the render surface):
 - Wheel and trackpad scroll pan by 48 px per notch (`Shift` + vertical wheel pans sideways);
   `Ctrl` + wheel (a trackpad pinch) zooms about the cursor by `1.1^delta` (§5). Pan and zoom are
   view state: no undo.
+- Without a wheel (a stylus): `Ctrl+=` (also `Ctrl++` and keypad `Ctrl++`) zooms in by 1.25 and
+  `Ctrl+-` out, about the viewport centre; `Ctrl+0` shows 100 %. `Ctrl` + `Space` + left drag zooms
+  about the press point by `e^((dx - dy) / 100)` from the zoom at the press (right or up zooms in),
+  in every tool; it places no point and pushes no undo step (`CHECK stylus_zoom`).
 - `Alt` + left drag moves the reference image (one undo step per drag), `Alt` + wheel scales it by
   `1.1^delta` about its centre (§10), when an image is shown.
-- Cursor: cross; hand over a point; move cursor while panning.
+- Cursor: cross; hand over a point; move cursor while panning; a horizontal-resize cursor while drag-zooming.
 
 Keyboard (surface focused):
 - Every command is one entry in one table (`ViewportControl.BuildCommandTable`, type `Command`:
@@ -505,7 +509,7 @@ for the construction scene):
   on a box face and a drag give an ellipse on a face of that box). `CHECK alloc_render` is relative: a frame that reuses the cached
   guides allocates at most two thirds of a frame that rebuilds them. An unhandled UI-thread error
   goes to stderr and to the status line as `Error: <message>`; the app keeps running.
-  The UX pass adds `CHECK pointer_navigation`, `CHECK error_persists`, `CHECK ctrl_k_toggles_points`,
+  The UX pass adds `CHECK pointer_navigation`, `CHECK stylus_zoom`, `CHECK error_persists`, `CHECK ctrl_k_toggles_points`,
   `CHECK points_panel_edits`, `CHECK click_places_points`, `CHECK view_state_outside_undo`,
   `CHECK reference_direct` and `CHECK boxes_follow_points` (each described where its behaviour is).
   The self-test also writes the real window, headless, to `screens/` next to `<path>` (each palette,

@@ -106,9 +106,15 @@ public class ViewportControl : Control
         PointerUpdateKind kind = e.GetCurrentPoint(this).Properties.PointerUpdateKind;
         MouseMode? mode = null;
 
-        // Space + left drag pans, as in most drawing apps, in every tool.
-        if (kind == PointerUpdateKind.MiddleButtonPressed ||
-            (kind == PointerUpdateKind.LeftButtonPressed && _spaceHeld))
+        // Ctrl + Space + drag zooms about the press point, Space + drag pans; both in every tool, so a
+        // stylus needs no wheel.
+        if (kind == PointerUpdateKind.LeftButtonPressed && _spaceHeld &&
+            (e.KeyModifiers & KeyModifiers.Control) != 0)
+        {
+            mode = new ZoomDragMode(World, position, ZoomAt);
+        }
+        else if (kind == PointerUpdateKind.MiddleButtonPressed ||
+                 (kind == PointerUpdateKind.LeftButtonPressed && _spaceHeld))
         {
             mode = new CameraMode(World);
         }
@@ -182,7 +188,9 @@ public class ViewportControl : Control
             InvalidateVisual();
         }
 
-        Cursor next = _spaceHeld || World.Overlay is CameraMode ? _panCursor : hover >= 0 ? _handCursor : _crossCursor;
+        Cursor next = World.Overlay is ZoomDragMode ? _zoomCursor
+            : _spaceHeld || World.Overlay is CameraMode ? _panCursor
+            : hover >= 0 ? _handCursor : _crossCursor;
         if (!ReferenceEquals(Cursor, next))
         {
             Cursor = next;
@@ -192,6 +200,7 @@ public class ViewportControl : Control
     private readonly Cursor _crossCursor = new(StandardCursorType.Cross);
     private readonly Cursor _handCursor = new(StandardCursorType.Hand);
     private readonly Cursor _panCursor = new(StandardCursorType.SizeAll);
+    private readonly Cursor _zoomCursor = new(StandardCursorType.SizeWestEast);
 
     // A Space released while another window had focus never arrives here.
     protected override void OnLostFocus(RoutedEventArgs e)
@@ -303,6 +312,15 @@ public class ViewportControl : Control
         }
     }
 
+    // Zoom per Zoom in / Zoom out step.
+    private const double ZoomStep = 1.25;
+
+    // About the viewport centre, like the zoom keys and buttons of most drawing apps.
+    private void ZoomBy(double factor)
+    {
+        ZoomAt(new Point(Bounds.Width / 2, Bounds.Height / 2), World.Zoom * factor);
+    }
+
     // Zoom is view state: no undo. The world point under the anchor stays put.
     public void ZoomAt(Point anchor, double zoom)
     {
@@ -408,6 +426,12 @@ public class ViewportControl : Control
         On("Dark palette", new[] { K(Key.P, ctrl | shift) }, ToggleDarkPalette);
         Sep();
         On("Centre view", new[] { K(Key.Home) }, CenterCamera);
+        // Ctrl + "=" (or "+", which needs Shift on many layouts) and Ctrl + "-": no wheel needed.
+        On("Zoom in", new[] { K(Key.OemPlus, ctrl), K(Key.OemPlus, ctrl | shift), K(Key.Add, ctrl) },
+            () => ZoomBy(ZoomStep), "Ctrl+=");
+        On("Zoom out", new[] { K(Key.OemMinus, ctrl), K(Key.OemMinus, ctrl | shift), K(Key.Subtract, ctrl) },
+            () => ZoomBy(1 / ZoomStep), "Ctrl+-");
+        On("Actual size", new[] { K(Key.D0, ctrl), K(Key.NumPad0, ctrl) }, () => ZoomBy(1 / World.Zoom), "Ctrl+0");
 
         Group("Tools");
         On("Leave tool / unselect", new[] { K(Key.Escape) }, Escape);

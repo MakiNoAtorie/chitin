@@ -203,3 +203,25 @@ internal sealed class ReferenceMode : MouseMode
         MoveDelta = new Vec2();
     }
 }
+
+// Ctrl + Space + drag: zoom about the press point. Right or up zooms in, left or down out; 100 px
+// is about 2.7 times. View state: no undo.
+internal sealed class ZoomDragMode : MouseMode
+{
+    private readonly Point _anchor;
+    private readonly double _startZoom;
+    private readonly Action<Point, double> _zoomAt;
+
+    public ZoomDragMode(World world, Point anchor, Action<Point, double> zoomAt) : base(world)
+    {
+        _anchor = anchor;
+        _startZoom = world.Zoom;
+        _zoomAt = zoomAt;
+    }
+
+    public override void MouseMoved(Point screen, Vec2 world, KeyModifiers modifiers)
+    {
+        base.MouseMoved(screen, world, modifiers);
+        _zoomAt(_anchor, _startZoom * Math.Exp((screen.X - _anchor.X - (screen.Y - _anchor.Y)) / 100));
+    }
+}
