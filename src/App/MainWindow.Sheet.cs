@@ -23,7 +23,8 @@ public partial class MainWindow
             "Leave tool / unselect", null),
         new("T", "Trace", "T", "Drag a trace line (right-drag works in every tool) · Ctrl snaps to 5°, Shift to 15°",
             "Trace tool", ToolKind.Trace),
-        new("B", "Box", "B", "Drag width, then depth, then height", "Box tool", ToolKind.Box),
+        new("B", "Box", "B", "Click the first corner, then click (or drag) width, depth and height", "Box tool",
+            ToolKind.Box),
         new("D", "Subdivide", "D", "Click a box face or four corners, then 2-9 cells", "Subdivision tool",
             ToolKind.Subdivision),
         new("E", "Ellipse", "E", "Click a box face or four corners, then drag the radius", "Ellipse tool",
@@ -48,7 +49,7 @@ public partial class MainWindow
         return tool switch
         {
             ToolKind.Trace => "Drag to pull a trace line (two at most) · Ctrl snaps to 5°, Shift to 15° · Esc leaves",
-            ToolKind.Box => "Drag width, then depth, then height · 1 / 2 force an axis · Esc leaves",
+            ToolKind.Box => "Click the first corner, then click width, depth and height · Esc leaves",
             ToolKind.Subdivision => "Click a box face or four corners · 2-9 set its cells (Shift: rows) · Esc leaves",
             ToolKind.Ellipse => "Click a box face or four corners, then drag from the centre · Esc leaves",
             _ => "Click to place a point · drag a point to move it · right-drag pulls a trace line · " +
@@ -213,7 +214,7 @@ public partial class MainWindow
         Message.IsVisible = message != null;
         MessageMark.IsVisible = message != null;
         Message.FontWeight = world.StatusIsError ? FontWeight.Bold : FontWeight.Normal;
-        Set(Hint, ToolHint(Viewport.Tool));
+        Set(Hint, Viewport.ToolStepHint ?? ToolHint(Viewport.Tool));
 
         var parts = new List<string>();
         if (world.SelectionIdx >= 0 && world.VanishingPoints[world.SelectionIdx] is { } point)

@@ -210,19 +210,27 @@ The window is one layout with no modes (`MainWindow.axaml`, `MainWindow.Sheet.cs
 
 ## 7.1 Box tool
 
-`B` toggles box mode; `Escape` leaves it. Building is three press-drag-release gestures: the first
-sets `p1`, the second `p2`, the third the height. A press without a drag sets nothing and says
-nothing.
+`B` toggles box mode; `Escape` leaves it. A box takes four steps: first corner `p0`, width `p1`,
+depth `p2`, height. Each click sets the current step from the pointer; between clicks the preview
+follows the pointer (the width edge, then the base, then the whole box), and the foot names the
+step (`Box 2 of 4: …`). A press that moves less than 4 px is a click. Drags work too: a drag from
+the first corner sets the width where it ends, and in later steps the release sets the step. A
+step that would give an edge or a height under 4 px on screen sets nothing and waits
+(`CHECK box_by_clicks`).
 
-- The first axis is chosen by the drag angle against VP0/VP1; `1`/`2` force VP0/VP1 while
-  dragging. `p1` is the pointer projected onto the ray from `p0` toward that axis's point, `p2` onto
-  the ray toward the other axis's point; an axis without a point takes the pointer as it is.
-- The height runs along the line from `p0` toward VP2 when it exists, else straight up or down.
-- An axis with no point falls back to a direction: horizontal, except the second axis when neither
-  VP0 nor VP1 exists (vertical). So with VP0 alone the box is in 1-point perspective.
+- Width: the axis is chosen by the pointer's direction from `p0` against VP0/VP1; `1`/`2` force
+  VP0/VP1 while setting the width. `p1` is the pointer projected onto the ray from `p0` toward
+  that axis's point.
+- Depth: the far corner `p3` is the pointer projected onto the line from `p1` toward the other
+  axis's point, so the base grows out of the width edge with its far corner under the pointer;
+  `p2` is where the line from `p3` toward the width point meets the depth ray from `p0`.
+- Height: the pointer's move from the depth click, along the line from `p0` toward VP2 when it
+  exists, else straight up or down.
+- An axis with no point falls back to a direction: horizontal, which with one point gives 1-point
+  perspective; with neither VP0 nor VP1 the depth runs up and to the right (an oblique view).
 - `p3` is the intersection of the line through `p1` toward the second axis's point and the line
   through `p2` toward the first axis's point; when those lines are parallel, `p3 = p1 + (p2 - p0)`.
-- `Backspace` cancels an in-progress build first, then (when idle) deletes the last box.
+- `Backspace` restarts an in-progress box first, then (when idle) deletes the last box.
 
 **Following.** A box built this way stores `p0`, the point each edge aims at (`follow`: width,
 depth, height, `-1` for none) and the signed edge lengths from `p0` toward them, plus the corners
@@ -398,7 +406,7 @@ Keyboard (surface focused):
 - Four clicked corners must form a convex shape in click order; a bow-tie or dented shape is
   refused with a status message and the corners are cleared (`CHECK tool_pick_quad`).
 - A tool takes only its own unmodified keys (and `Shift` + digit / `+` / `-` in the subdivision
-  tool). Keys with `Ctrl` or `Alt`, and box-tool `1`/`2` outside the first-axis drag, reach the
+  tool). Keys with `Ctrl` or `Alt`, and box-tool `1`/`2` outside the width step, reach the
   viewport, so point selection, deletion and `Alt+Backspace` work while a tool is active.
 - `Backspace` delete the last trace line, `Alt+Backspace` all. `F1` shows Keys and gestures.
 - **Find** (`Ctrl+F`, or View > Find a command): a field over the top of the viewport and the
@@ -515,9 +523,9 @@ for the construction scene):
   The UX pass adds `CHECK pointer_navigation`, `CHECK stylus_zoom`, `CHECK error_persists`,
   `CHECK ctrl_k_toggles_points`,
   `CHECK points_panel_edits`, `CHECK click_places_points`, `CHECK view_state_outside_undo`,
-  `CHECK reference_direct` and `CHECK boxes_follow_points` (each described where its behaviour is).
+  `CHECK reference_direct`, `CHECK boxes_follow_points` and `CHECK box_by_clicks` (each described where its behaviour is).
   The self-test also writes the real window, headless, to `screens/` next to `<path>` (each palette,
-  Find open, a following 3-point box after its point moved, and an empty document at fit and zoomed out) for review. The `-shapes` PNG contains stacked boxes, a subdivided face and an
+  Find open, a following 3-point box after its point moved, the box tool mid-build, and an empty document at fit and zoomed out) for review. The `-shapes` PNG contains stacked boxes, a subdivided face and an
   ellipse; the interactive and export PNGs move when the palette changes.
 
 The operator will inspect all three PNGs. Do not stub rendering, do not catch and swallow errors.

@@ -486,6 +486,7 @@ internal static class SelfTest
             Check("click_places_points", ClickPlacesPoints());
             Check("view_state_outside_undo", ViewStateOutsideUndo());
             Check("boxes_follow_points", BoxesFollowPoints());
+            Check("box_by_clicks", BoxByClicks());
             Check("menu_gestures", MenuGesturesBound());
             Check("window_keys_once", WindowKeysRunOnce());
             Check("menu_state", MenuState());
@@ -1268,6 +1269,76 @@ internal static class SelfTest
         }
     }
 
+    // The box tool by clicks alone, the preview following the pointer: a still click sets nothing new;
+    // the depth click puts the far corner at the pointer; height counts from the depth click, and a
+    // click with no height made builds nothing. The foot names each step.
+    private static bool BoxByClicks()
+    {
+        var viewport = new ViewportControl();
+        var window = new Window { Width = 900, Height = 700, Content = viewport };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        try
+        {
+            World world = viewport.World;
+            world.ApplyPreset(2);
+            Point Screen(Vec2 p) => new((p.X + world.Camera.X) * world.Zoom, (p.Y + world.Camera.Y) * world.Zoom);
+            void Move(Vec2 p) => window.MouseMove(Screen(p));
+            void Click(Vec2 p)
+            {
+                window.MouseMove(Screen(p));
+                window.MouseDown(Screen(p), MouseButton.Left);
+                window.MouseUp(Screen(p), MouseButton.Left);
+            }
+
+            static bool OnLine(Vec2 a, Vec2 b, Vec2 c) =>
+                Math.Abs((b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X)) <= 1e-6 * a.DistFrom(b) * a.DistFrom(c) + 1e-6;
+
+            Vec2 vp0 = world.VanishingPoints[0]!.Pos;
+            Vec2 vp1 = world.VanishingPoints[1]!.Pos;
+            var p0 = new Vec2(0, 180);
+            viewport.ProcessKey(new KeyEventArgs { Key = Key.B });
+            string? first = viewport.ToolStepHint;
+            Click(p0);
+            bool waits = viewport.ToolStepHint?.StartsWith("Box 2 of 4") == true;
+            Click(p0);
+            bool stillWidth = viewport.ToolStepHint?.StartsWith("Box 2 of 4") == true;
+
+            // A click off the guide sets the width at its projection onto the guide.
+            Vec2 toward = (vp0 - p0).Normalized();
+            Vec2 widthClick = p0 + toward * 90 + new Vec2(0, 6);
+            Vec2 p1 = p0 + toward * Vec2.Dot(widthClick - p0, toward);
+            Click(widthClick);
+            bool depthStep = viewport.ToolStepHint?.StartsWith("Box 3 of 4") == true;
+
+            // On the line from p1 toward point 2: the far corner lands exactly there.
+            Vec2 far = p1 + (vp1 - p1).Normalized() * 110;
+            Click(far);
+            bool heightStep = viewport.ToolStepHint?.StartsWith("Box 4 of 4") == true;
+            Click(far);
+            bool noFlatBox = world.Boxes.Count == 0 && viewport.ToolStepHint?.StartsWith("Box 4 of 4") == true;
+
+            Move(far + new Vec2(0, -50));
+            bool previewOnly = world.Boxes.Count == 0;
+            Click(far + new Vec2(0, -50));
+            if (world.Boxes.Count != 1)
+            {
+                return false;
+            }
+
+
+            BoxState box = world.Boxes[0];
+            bool shape = box.P0 == p0 && OnLine(p0, box.P1, vp0) && box.P1.DistFrom(p1) < 1e-6 &&
+                OnLine(p0, box.P2, vp1) && box.P3.DistFrom(far) < 1e-6 && box.H.DistFrom(new Vec2(0, -50)) < 1e-6;
+            return first?.StartsWith("Box 1 of 4") == true && waits && stillWidth && depthStep && heightStep &&
+                noFlatBox && previewOnly && shape && viewport.ToolStepHint?.StartsWith("Box 1 of 4") == true;
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     // A box built with the tool lies on its point rays and follows the points when they move, and
     // so does a subdivision on its face; the links survive a save, and removing the box detaches it.
     private static bool BoxesFollowPoints()
@@ -1885,6 +1956,31 @@ internal static class SelfTest
             world.VanishingPoints[0]!.Pos = new Vec2(-330, 10);
             world.BumpRevision();
             Capture(window, Path.Combine(directory, "window-boxes.png"));
+
+            // The box tool by clicks, captured while the depth and the height follow the pointer.
+            viewport.NewDocument();
+            world.ApplyPreset(2);
+            viewport.ProcessKey(new KeyEventArgs { Key = Key.B });
+            Point At(Vec2 p) => viewport.TranslatePoint(
+                new Point((p.X + world.Camera.X) * world.Zoom, (p.Y + world.Camera.Y) * world.Zoom), window)!.Value;
+            void ClickAt(Vec2 p)
+            {
+                window.MouseMove(At(p));
+                window.MouseDown(At(p), MouseButton.Left);
+                window.MouseUp(At(p), MouseButton.Left);
+            }
+
+            var corner = new Vec2(0, 190);
+            Vec2 widthEnd = corner + (world.VanishingPoints[0]!.Pos - corner).Normalized() * 110;
+            Vec2 farCorner = widthEnd + (world.VanishingPoints[1]!.Pos - widthEnd).Normalized() * 130;
+            ClickAt(corner);
+            ClickAt(widthEnd);
+            window.MouseMove(At(farCorner));
+            Capture(window, Path.Combine(directory, "window-box-depth.png"));
+            ClickAt(farCorner);
+            window.MouseMove(At(farCorner + new Vec2(0, -70)));
+            Capture(window, Path.Combine(directory, "window-box-height.png"));
+            viewport.ProcessKey(new KeyEventArgs { Key = Key.Escape });
 
             viewport.NewDocument();
             Capture(window, Path.Combine(directory, "window-empty.png"));

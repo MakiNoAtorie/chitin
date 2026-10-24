@@ -72,6 +72,9 @@ public class ViewportControl : Control
 
     private bool _traceTool;
 
+    // The construction tool's current step, for the foot.
+    public string? ToolStepHint => _construction?.Hint;
+
     public void CenterCamera()
     {
         int width = (int)Bounds.Width;

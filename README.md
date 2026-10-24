@@ -51,8 +51,9 @@ menu item shows its shortcut. The essentials:
   bottom-right corner can be tapped.
 - **Trace lines**: `T` and drag, or right-drag in any tool (`Ctrl` snaps 5°, `Shift` 15°).
   `Ctrl+Shift+1`-`9` drops a point where the two lines cross. `Backspace` deletes the last line.
-- **Box** (`B`): three drags set width, depth and height along the vanishing points (`1`/`2` force
-  an axis). Boxes follow their points when you move them.
+- **Box** (`B`): click the first corner, then move and click to set the width, the depth and the
+  height; the preview follows the pointer and the bottom bar names each step (`1`/`2` pick the
+  width's point; drags work too). Boxes follow their points when you move them.
 - **Subdivide** (`D`): click a box face or four corners; `2`-`9` set the cells of the one just made.
 - **Ellipse** (`E`): click a box face or four corners, then drag from the centre.
 - `Backspace` in a tool deletes its last shape; `Escape` leaves the tool.
@@ -71,7 +72,8 @@ menu item shows its shortcut. The essentials:
 - `dev-docs/verify.sh`: the build, the self-test (every `CHECK ... PASS`, then `SELFTEST_OK`) and
   the command-line contract.
 - `--selftest` also renders the real window headless into `.verify/screens/` (each palette, Find
-  open, a following 3-point box, and an empty document at fit and zoomed out).
+  open, a following 3-point box, the box tool mid-build, and an empty document at fit and
+  zoomed out).
 - The window has not been driven by hand on a desktop since the UX pass (`docs/UX-PASS.md`); its
   behaviour is covered by the headless checks. Clipboard, file pickers and the macOS/Linux runtime
   were not exercised on this host.

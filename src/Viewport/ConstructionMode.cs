@@ -26,6 +26,9 @@ internal abstract class ConstructionMode : MouseMode
 
     public abstract ToolKind Kind { get; }
 
+    // The current step for the foot, or null for the tool's general hint.
+    public virtual string? Hint => Corners.Count > 0 ? $"Corner {Corners.Count + 1} of 4 · Backspace restarts" : null;
+
     public virtual void Begin(Point screen, Vec2 world, KeyModifiers modifiers)
     {
         base.Init(screen, world);
@@ -111,15 +114,24 @@ internal abstract class ConstructionMode : MouseMode
     }
 }
 
-// Three drags: width, depth, height. Width and depth lie on the rays from the first corner to
-// their vanishing points; the height runs toward point 3, or straight up without it. The box
-// keeps those links, so it follows the points when they move.
+// Four steps: first corner, width, depth, height. Each click sets the current step from the
+// pointer, and between clicks the preview follows it, so clicks and drags both work: a drag from
+// the first corner sets the width where it ends. Width runs along the ray from the first corner to
+// its vanishing point; depth puts the far corner under the pointer; height follows the pointer's
+// move up or down from the depth click, toward point 3 when it exists. The box keeps its links to
+// the points, so it follows them when they move.
 internal sealed class BoxTool : ConstructionMode
 {
+    // A shorter move is a click, and a shorter edge is no edge, in screen pixels.
+    private const double MinPixels = 4;
+
     private int _stage;
+    private bool _starting;
+    private Point _press;
     private Vec2 _p0;
     private Vec2 _p1;
     private Vec2 _p2;
+    private Vec2 _heightFrom;
     private int _axis;
     private int _forced = -1;
 
@@ -129,62 +141,82 @@ internal sealed class BoxTool : ConstructionMode
 
     public override ToolKind Kind => ToolKind.Box;
 
+    public override string? Hint => _stage switch
+    {
+        1 => "Box 2 of 4: move along a guide, click to set the width · 1 / 2 pick point 1 or 2 · Backspace restarts",
+        2 => "Box 3 of 4: move out from the edge, click to set the depth · Backspace restarts",
+        3 => "Box 4 of 4: move up or down, click to set the height · Backspace restarts",
+        _ => "Box 1 of 4: click the first corner, or drag the first edge · Esc leaves"
+    };
+
     public override void Begin(Point screen, Vec2 world, KeyModifiers modifiers)
     {
         base.Begin(screen, world, modifiers);
-        if (_stage <= 1)
+        _press = screen;
+        if (_stage == 0)
         {
             _p0 = world;
+            _forced = -1;
+            _starting = true;
             _stage = 1;
         }
-
-        _forced = -1;
     }
 
     public override void MouseUp()
     {
         base.MouseUp();
-        if (_stage == 1)
+        bool click = new Vec2(_press.X, _press.Y).DistFrom(LastScreen) < MinPixels;
+        if (_stage == 1 && _starting)
         {
-            // A click without a drag sets nothing.
-            if (!HasMoved)
+            // The press that placed the first corner: a click waits for the width click.
+            _starting = false;
+            if (click)
             {
-                _stage = 0;
                 return;
             }
-
-            _axis = FirstAxis();
-            _p1 = OnAxis(_axis, CurrentWorld);
-            // A drag across the point ray projects to nothing: no width, no box.
-            _stage = _p1.DistFrom(_p0) < 1e-6 ? 0 : 2;
         }
-        else if (_stage == 2)
+
+        switch (_stage)
         {
-            if (!HasMoved)
+            case 1:
             {
-                return;
+                int axis = FirstAxis();
+                Vec2 p1 = OnAxis(axis, CurrentWorld);
+                if (Pixels(p1, _p0) >= MinPixels)
+                {
+                    _axis = axis;
+                    _p1 = p1;
+                    _stage = 2;
+                }
+
+                break;
             }
 
-            Vec2 p2 = OnAxis(1 - _axis, CurrentWorld);
-            if (p2.DistFrom(_p0) < 1e-6)
+            case 2:
             {
-                return;
+                Vec2 p2 = DepthCorner(CurrentWorld);
+                if (Pixels(p2, _p0) >= MinPixels)
+                {
+                    _p2 = p2;
+                    _heightFrom = CurrentWorld;
+                    _stage = 3;
+                }
+
+                break;
             }
 
-            _p2 = p2;
-            _stage = 3;
-        }
-        else if (_stage == 3)
-        {
-            Vec2 h = Height();
-            if (h.Length() < 1e-6)
+            case 3:
             {
-                return;
-            }
+                Vec2 h = Height();
+                if (h.Length() * World.Zoom >= MinPixels)
+                {
+                    PushUndo();
+                    World.AddBox(Pending(_p2, h));
+                    _stage = 0;
+                }
 
-            PushUndo();
-            World.AddBox(Pending(_p2, h));
-            _stage = 0;
+                break;
+            }
         }
     }
 
@@ -225,16 +257,15 @@ internal sealed class BoxTool : ConstructionMode
         var prims = new List<Prim>();
         switch (_stage)
         {
-            case 1 when Dragging:
+            case 1:
                 prims.Add(Prim.Line(World.Styles.ConstructionPreviewPen, _p0, OnAxis(FirstAxis(), CurrentWorld),
                     plane));
                 break;
 
             case 2:
-            case 3 when !Dragging:
             {
-                Vec2 p2 = _stage == 2 ? OnAxis(1 - _axis, CurrentWorld) : _p2;
-                (Vec2[] bottom, _) = BoxGeometry.Corners(Pending(p2, new Vec2()), World.VanishingPoints);
+                (Vec2[] bottom, _) = BoxGeometry.Corners(Pending(DepthCorner(CurrentWorld), new Vec2()),
+                    World.VanishingPoints);
                 prims.Add(Prim.Poly(World.Styles.ConstructionPreviewPen, null, bottom, true, plane));
                 break;
             }
@@ -245,6 +276,11 @@ internal sealed class BoxTool : ConstructionMode
         }
 
         Draw(prims, context);
+        if (_stage > 0)
+        {
+            context.DrawEllipse(World.Styles.VPFill[0], World.Styles.BoxEdgePen, ToPoint(_p0),
+                3.0 / World.Zoom, 3.0 / World.Zoom);
+        }
     }
 
     // The box as it stands, with its links to the points that exist now.
@@ -284,28 +320,38 @@ internal sealed class BoxTool : ConstructionMode
         return first >= second ? 0 : 1;
     }
 
-    // The pointer projected onto the ray from p0 toward the axis point; free without that point.
+    // The pointer projected onto the ray from p0 along the axis.
     private Vec2 OnAxis(int axis, Vec2 pointer)
     {
-        if (PointFor(axis) is null)
-        {
-            return pointer;
-        }
-
         Vec2 direction = AxisDirection(axis, _p0);
         return _p0 + direction * Vec2.Dot(pointer - _p0, direction);
     }
 
+    // The depth corner p2 that puts the far corner p3 at the pointer: p3 slides along the line from
+    // p1 toward the depth point, and p2 is where the line from p3 toward the width point meets the
+    // depth ray from p0.
+    private Vec2 DepthCorner(Vec2 pointer)
+    {
+        int a = _axis;
+        int b = 1 - _axis;
+        Vec2 along = AxisDirection(b, _p1);
+        Vec2 p3 = _p1 + along * Vec2.Dot(pointer - _p1, along);
+        return Geom.IntersectLines(_p0, AxisDirection(b, _p0), p3, AxisDirection(a, p3), out Vec2 p2)
+            ? p2
+            : _p0 + (p3 - _p1);
+    }
+
+    // The pointer's move from the depth click, along the line toward point 3, or straight up or down.
     private Vec2 Height()
     {
-        Vec2 drag = CurrentWorld - _p0;
+        Vec2 move = CurrentWorld - _heightFrom;
         if (PointFor(2) is { } point)
         {
             Vec2 direction = (point - _p0).Normalized();
-            return direction * Vec2.Dot(drag, direction);
+            return direction * Vec2.Dot(move, direction);
         }
 
-        return new Vec2(0, drag.Y);
+        return new Vec2(0, move.Y);
     }
 
     private Vec2? PointFor(int index)
@@ -313,7 +359,8 @@ internal sealed class BoxTool : ConstructionMode
         return World.VanishingPoints[index] is { } point && point.Pos.DistFrom(_p0) > 1e-9 ? point.Pos : null;
     }
 
-    // Toward the axis point; without it, horizontal (with one point that is 1-point perspective).
+    // Toward the axis point. Without it: horizontal, which with one point is 1-point perspective;
+    // with neither point the depth runs up and to the right, an oblique view.
     private Vec2 AxisDirection(int index, Vec2 origin)
     {
         if (World.VanishingPoints[index] is { } point && point.Pos.DistFrom(origin) > 1e-9)
@@ -321,7 +368,14 @@ internal sealed class BoxTool : ConstructionMode
             return (point.Pos - origin).Normalized();
         }
 
-        return index == 0 || World.VanishingPoints[0] != null ? new Vec2(1, 0) : new Vec2(0, 1);
+        return index == 0 || World.VanishingPoints[0] != null
+            ? new Vec2(1, 0)
+            : new Vec2(Math.Sqrt(0.5), -Math.Sqrt(0.5));
+    }
+
+    private double Pixels(Vec2 a, Vec2 b)
+    {
+        return a.DistFrom(b) * World.Zoom;
     }
 }
 
@@ -340,6 +394,10 @@ internal sealed class EllipseTool : ConstructionMode
     }
 
     public override ToolKind Kind => ToolKind.Ellipse;
+
+    public override string? Hint => _quad != null
+        ? "Ellipse: drag from the centre to set the radius · Backspace restarts"
+        : base.Hint;
 
     public override void Begin(Point screen, Vec2 world, KeyModifiers modifiers)
     {
