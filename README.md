@@ -67,8 +67,8 @@ menu item shows its shortcut. The essentials:
 - `dotnet build -c Release`: 0 warnings, 0 errors.
 - `dev-docs/verify.sh`: the build, the self-test (every `CHECK ... PASS`, then `SELFTEST_OK`) and
   the command-line contract.
-- `--selftest` also renders the real window headless into `.verify/screens/` (each palette, and
-  Find open).
+- `--selftest` also renders the real window headless into `.verify/screens/` (each palette, Find
+  open, a following 3-point box, and an empty document).
 - The window has not been driven by hand on a desktop since the UX pass (`docs/UX-PASS.md`); its
   behaviour is covered by the headless checks. Clipboard, file pickers and the macOS/Linux runtime
   were not exercised on this host.

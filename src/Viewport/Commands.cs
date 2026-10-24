@@ -2,9 +2,9 @@ using Avalonia.Input;
 
 namespace Chitin;
 
-// One user command. The key handler, the menus, the F1 overlay, Find and the inspector all read
+// One user command. The key handler, the menus, the F1 list, Find and the points panel all read
 // this table, so they cannot drift apart. Run takes the index of the key that matched (0 from a
-// menu or Find); an indexed command (1-9) needs that key, so Find only names its gesture.
+// menu or Find); an indexed command (1-9) needs that key, so it is in neither the menus nor Find.
 public sealed record Command(
     string Name,
     string Group,

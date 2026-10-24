@@ -509,7 +509,7 @@ for the construction scene):
   `CHECK points_panel_edits`, `CHECK click_places_points`, `CHECK view_state_outside_undo`,
   `CHECK reference_direct` and `CHECK boxes_follow_points` (each described where its behaviour is).
   The self-test also writes the real window, headless, to `screens/` next to `<path>` (each palette,
-  and Find open) for review. The `-shapes` PNG contains stacked boxes, a subdivided face and an
+  Find open, a following 3-point box after its point moved, and an empty document) for review. The `-shapes` PNG contains stacked boxes, a subdivided face and an
   ellipse; the interactive and export PNGs move when the palette changes.
 
 The operator will inspect all three PNGs. Do not stub rendering, do not catch and swallow errors.

@@ -54,15 +54,6 @@ public sealed class ReferenceSettings
         };
     }
 
-    public bool ContentEquals(ReferenceSettings other)
-    {
-        return Opacity.Equals(other.Opacity) &&
-               FlipH == other.FlipH &&
-               FlipV == other.FlipV &&
-               Scale.Equals(other.Scale) &&
-               Offset == other.Offset &&
-               Hidden == other.Hidden;
-    }
 }
 
 public sealed class BoxState

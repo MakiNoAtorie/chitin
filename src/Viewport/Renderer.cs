@@ -60,7 +60,7 @@ public static class Renderer
         // An empty plane says how to start.
         if (interactive && world.Overlay == null && world.VanishingPoints.All(point => point == null))
         {
-            FormattedText hint = Chrome.Text(EmptyHint, 12, styles.MutedText);
+            FormattedText hint = Format(EmptyHint, 12, styles.MutedText, Chrome.Mono);
             context.DrawText(hint, new Point(camera.X * styles.Zoom - hint.Width / 2,
                 camera.Y * styles.Zoom - hint.Height / 2));
         }

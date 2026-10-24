@@ -1764,6 +1764,29 @@ internal static class SelfTest
             Dispatcher.UIThread.RunJobs();
             window.FindControl<TextBox>("FindBox")!.Text = "grid";
             Capture(window, Path.Combine(directory, "window-find.png"));
+            window.FindControl<TextBox>("FindBox")!.Text = "";
+            viewport.Focus();
+            Dispatcher.UIThread.RunJobs();
+
+            // A following 3-point box after point 1 moved, with a subdivided side and an ellipse on top.
+            viewport.NewDocument();
+            world.ApplyPreset(3);
+            var p0 = new Vec2(-20, 215);
+            Vec2 Along(int index, double length) => p0 + (world.VanishingPoints[index]!.Pos - p0).Normalized() * length;
+            var box = new BoxState
+            {
+                P0 = p0, P1 = Along(0, 130), P2 = Along(1, 150), H = Along(2, 70) - p0,
+                Follow = new[] { 0, 1, 2 }, Lengths = new[] { 130.0, 150, 70 }
+            };
+            world.AddBox(box);
+            world.AddSubdivision(new SubdivisionState { Quad = new Vec2[4], N = 3, M = 2, Box = 0, Face = 2 });
+            world.AddEllipse(new EllipseState { Quad = new Vec2[4], Cx = 0.5, Cy = 0.5, R = 0.4, Box = 0, Face = 1 });
+            world.VanishingPoints[0]!.Pos = new Vec2(-330, 10);
+            world.BumpRevision();
+            Capture(window, Path.Combine(directory, "window-boxes.png"));
+
+            viewport.NewDocument();
+            Capture(window, Path.Combine(directory, "window-empty.png"));
         }
         finally
         {

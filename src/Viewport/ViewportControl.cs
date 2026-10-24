@@ -1,13 +1,12 @@
-using System.Runtime.InteropServices;
 using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 
 namespace Chitin;
@@ -43,7 +42,7 @@ public class ViewportControl : Control
     public ViewportControl()
     {
         Focusable = true;
-        Cursor = new Cursor(StandardCursorType.Cross);
+        Cursor = _crossCursor;
         World.StatusChanged += InvalidateVisual;
         World.ImageInUse = History.Holds;
         History.Dropped = state => World.ReleaseImage(state.Background);
@@ -126,7 +125,6 @@ public class ViewportControl : Control
             InvalidateVisual();
             return;
         }
-
         else if (kind == PointerUpdateKind.LeftButtonPressed && !_traceTool)
         {
             // A click on the empty plane places the next point; with a point selected it only unselects.
@@ -184,8 +182,26 @@ public class ViewportControl : Control
             InvalidateVisual();
         }
 
-        Cursor = new Cursor(_spaceHeld || World.Overlay is CameraMode ? StandardCursorType.SizeAll
-            : hover >= 0 ? StandardCursorType.Hand : StandardCursorType.Cross);
+        Cursor next = _spaceHeld || World.Overlay is CameraMode ? _panCursor : hover >= 0 ? _handCursor : _crossCursor;
+        if (!ReferenceEquals(Cursor, next))
+        {
+            Cursor = next;
+        }
+    }
+
+    private readonly Cursor _crossCursor = new(StandardCursorType.Cross);
+    private readonly Cursor _handCursor = new(StandardCursorType.Hand);
+    private readonly Cursor _panCursor = new(StandardCursorType.SizeAll);
+
+    // A Space released while another window had focus never arrives here.
+    protected override void OnLostFocus(RoutedEventArgs e)
+    {
+        base.OnLostFocus(e);
+        if (_spaceHeld)
+        {
+            _spaceHeld = false;
+            UpdateHover();
+        }
     }
 
     protected override void OnPointerExited(PointerEventArgs e)
@@ -449,7 +465,7 @@ public class ViewportControl : Control
         return _keys.ContainsKey((key, modifiers));
     }
 
-    // For menu items, Find and the inspector: the command without the construction tool's turn.
+    // For menu items, Find and the points panel: the command without the construction tool's turn.
     // Index -1: no key. An indexed command then only says which keys run it.
     internal Task RunCommandAsync(Command command, int index = -1)
     {
@@ -785,7 +801,6 @@ public class ViewportControl : Control
         World.BumpRevision(false);
         InvalidateVisual();
     }
-
 
     public void ToggleCone()
     {
@@ -1315,5 +1330,4 @@ public class ViewportControl : Control
 
         return renderTarget;
     }
-
 }

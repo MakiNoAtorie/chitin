@@ -155,7 +155,8 @@ internal sealed class BoxTool : ConstructionMode
 
             _axis = FirstAxis();
             _p1 = OnAxis(_axis, CurrentWorld);
-            _stage = 2;
+            // A drag across the point ray projects to nothing: no width, no box.
+            _stage = _p1.DistFrom(_p0) < 1e-6 ? 0 : 2;
         }
         else if (_stage == 2)
         {
@@ -164,7 +165,13 @@ internal sealed class BoxTool : ConstructionMode
                 return;
             }
 
-            _p2 = OnAxis(1 - _axis, CurrentWorld);
+            Vec2 p2 = OnAxis(1 - _axis, CurrentWorld);
+            if (p2.DistFrom(_p0) < 1e-6)
+            {
+                return;
+            }
+
+            _p2 = p2;
             _stage = 3;
         }
         else if (_stage == 3)

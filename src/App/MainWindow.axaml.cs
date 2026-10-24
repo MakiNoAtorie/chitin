@@ -149,15 +149,6 @@ public partial class MainWindow : Window
         _menuItems["Redo"].Header = Viewport.History.RedoName is { } redo ? $"Redo {redo}" : "Redo";
     }
 
-    private void Run(Action action)
-    {
-        RunAsync(() =>
-        {
-            action();
-            return Task.CompletedTask;
-        });
-    }
-
     // The one catch for menu commands; the viewport methods report their own expected failures.
     private async void RunAsync(Func<Task> action)
     {
