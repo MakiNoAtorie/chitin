@@ -13,9 +13,6 @@ public enum RenderMode
 
 public static class Renderer
 {
-    private const double HelpTextSize = 11;
-    private const double HelpTextSmallSize = 9;
-
     private static readonly Typeface Sans = new(FontFamily.Default);
     private static readonly Typeface Serif = new("serif");
     private static readonly Dictionary<(string Text, double Size, IBrush Brush, Typeface Face), FormattedText>
@@ -24,19 +21,6 @@ public static class Renderer
     internal static void ClearTextCache()
     {
         TextCache.Clear();
-    }
-
-    private enum HAlign
-    {
-        Near,
-        Center,
-        Far
-    }
-
-    private enum VAlign
-    {
-        Near,
-        Center
     }
 
     public static void Draw(DrawingContext context, World world, Size viewport, RenderMode mode)
@@ -70,16 +54,6 @@ public static class Renderer
                 }
 
                 world.Overlay?.DrawOver(context);
-            }
-        }
-
-        if (interactive)
-        {
-            DrawCentringMarks(context, styles, viewport);
-
-            if (world.ShowHelp)
-            {
-                DrawHelp(context, world, styles, viewport);
             }
         }
     }
@@ -183,67 +157,6 @@ public static class Renderer
         return geometry;
     }
 
-    // Centring marks: a short heavy tick at the middle of each viewport edge, at the point the
-    // camera keeps when the panels change width.
-    private static void DrawCentringMarks(DrawingContext context, Styles styles, Size viewport)
-    {
-        double cx = Math.Round(viewport.Width / 2) - 1.5;
-        double cy = Math.Round(viewport.Height / 2) - 1.5;
-        context.FillRectangle(styles.PromptText, new Rect(cx, 0, 3, 12));
-        context.FillRectangle(styles.PromptText, new Rect(cx, viewport.Height - 12, 3, 12));
-        context.FillRectangle(styles.PromptText, new Rect(0, cy, 12, 3));
-        context.FillRectangle(styles.PromptText, new Rect(viewport.Width - 12, cy, 12, 3));
-    }
-
-    private static void DrawHelp(DrawingContext context, World world, Styles styles, Size viewport)
-    {
-        double top = 0;
-        double bottom = viewport.Height;
-        double y = top;
-        double left = 0;
-        bool altLine = false;
-        context.FillRectangle(styles.HelpBackground, new Rect(left, top, World.HelpColumnWidth, bottom - top));
-
-        void Row(string first, string second, double indent = 0)
-        {
-            double height = Format(first, HelpTextSize, styles.HelpTextA, Chrome.Mono).Height;
-            // A short window gets a second column instead of rows hidden under the bottom bar.
-            if (y + height > bottom && y > top)
-            {
-                left += World.HelpColumnWidth;
-                y = top;
-                context.FillRectangle(styles.HelpBackground,
-                    new Rect(left, top, World.HelpColumnWidth, bottom - top));
-            }
-
-            altLine = !altLine;
-            if (altLine)
-            {
-                context.FillRectangle(styles.HelpBackgroundAlt,
-                    new Rect(left, (int)y, World.HelpColumnWidth, (int)height));
-            }
-
-            // A row with no text is a gap; a row with no second part is a heading.
-            if (first != " ")
-            {
-                double x = left + 8 + indent;
-                x += DrawText(context, first, HelpTextSize, styles.HelpTextA, x, y);
-                if (second != " ")
-                {
-                    x += DrawText(context, ":", HelpTextSmallSize, styles.HelpTextC, x, y);
-                    DrawText(context, second, HelpTextSmallSize, styles.HelpTextB, x, y);
-                }
-            }
-
-            y += height;
-        }
-
-        foreach (HelpRow row in world.Help)
-        {
-            Row(row.Keys, row.Text, row.Indent);
-        }
-    }
-
     private static FormattedText Format(string text, double size, IBrush brush, Typeface face)
     {
         var key = (text, size, brush, face);
@@ -262,21 +175,5 @@ public static class Renderer
             face, size, brush);
         TextCache[key] = formatted;
         return formatted;
-    }
-
-    // Chrome text (the help overlay) is set in the bundled mono face.
-    private static double DrawText(DrawingContext context, string text, double size, IBrush brush,
-        double x, double y, HAlign horizontal = HAlign.Near, VAlign vertical = VAlign.Near)
-    {
-        FormattedText formatted = Format(text, size, brush, Chrome.Mono);
-        double drawX = horizontal switch
-        {
-            HAlign.Center => x - formatted.Width / 2,
-            HAlign.Far => x - formatted.Width,
-            _ => x
-        };
-        double drawY = vertical == VAlign.Center ? y - formatted.Height / 2 : y;
-        context.DrawText(formatted, new Point(drawX, drawY));
-        return formatted.Width;
     }
 }

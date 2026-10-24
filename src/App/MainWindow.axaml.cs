@@ -15,19 +15,20 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        Viewport.AddCommand(new Command("Detailed panels", "View", "Ctrl+K",
+        Viewport.AddCommand(new Command("Points panel", "View", "Ctrl+K",
             new[] { new KeyGesture(Key.K, KeyModifiers.Control) }, _ =>
             {
-                SetDetailed(!Detailed);
+                TogglePoints();
                 return Task.CompletedTask;
             }, InMenu: true, Separator: true));
         Viewport.AddCommand(new Command("Find a command", "View", "Ctrl+F",
             new[] { new KeyGesture(Key.F, KeyModifiers.Control) }, _ =>
             {
-                // After the menu and the command runner give focus back to the viewport.
-                Dispatcher.UIThread.Post(() => FindBox.Focus(), DispatcherPriority.Background);
+                OpenFind();
                 return Task.CompletedTask;
             }, InMenu: true));
+        Viewport.AddCommand(new Command("Keys and gestures", "Help", "F1",
+            new[] { new KeyGesture(Key.F1) }, _ => ShowKeysAsync(), InMenu: true));
         Viewport.AddCommand(new Command("About...", "Help", "", Array.Empty<KeyGesture>(),
             _ => new AboutWindow().ShowDialog(this), InMenu: true));
         BuildMenu();
@@ -181,8 +182,11 @@ public partial class MainWindow : Window
 
     private void EditMenu_Opened(object? sender, RoutedEventArgs e)
     {
+        // The item names the command it reverts: "Undo Move vanishing point".
         _menuItems["Undo"].IsEnabled = Viewport.History.CanUndo;
+        _menuItems["Undo"].Header = Viewport.History.UndoName is { } undo ? $"Undo {undo}" : "Undo";
         _menuItems["Redo"].IsEnabled = Viewport.History.CanRedo;
+        _menuItems["Redo"].Header = Viewport.History.RedoName is { } redo ? $"Redo {redo}" : "Redo";
     }
 
     private void Run(Action action)

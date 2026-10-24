@@ -1,7 +1,6 @@
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Media;
 
 namespace Chitin;
@@ -113,84 +112,12 @@ public static class Chrome
     }
 }
 
-// Section hatching at 45 degrees: marks an empty or unavailable cell.
-public class Hatch : Control
-{
-    public static readonly StyledProperty<IBrush?> StrokeProperty =
-        AvaloniaProperty.Register<Hatch, IBrush?>(nameof(Stroke));
-
-    static Hatch()
-    {
-        AffectsRender<Hatch>(StrokeProperty);
-    }
-
-    public IBrush? Stroke
-    {
-        get => GetValue(StrokeProperty);
-        set => SetValue(StrokeProperty, value);
-    }
-
-    public override void Render(DrawingContext context)
-    {
-        var pen = new Pen(Stroke ?? Brushes.Gray, 1);
-        double w = Bounds.Width;
-        double h = Bounds.Height;
-        using (context.PushClip(new Rect(Bounds.Size)))
-        {
-            for (double x = -h; x < w; x += 6)
-            {
-                context.DrawLine(pen, new Point(x, h), new Point(x + h, 0));
-            }
-        }
-    }
-}
-
-// A detail callout: a split circle with the section letter over the sheet number.
-public class Bubble : Control
-{
-    public static readonly StyledProperty<IBrush?> StrokeProperty =
-        AvaloniaProperty.Register<Bubble, IBrush?>(nameof(Stroke));
-
-    static Bubble()
-    {
-        AffectsRender<Bubble>(StrokeProperty);
-    }
-
-    public Bubble()
-    {
-        Width = 26;
-        Height = 26;
-    }
-
-    public IBrush? Stroke
-    {
-        get => GetValue(StrokeProperty);
-        set => SetValue(StrokeProperty, value);
-    }
-
-    public string Letter { get; set; } = "A";
-    public string SheetNumber { get; set; } = "01";
-
-    public override void Render(DrawingContext context)
-    {
-        IBrush brush = Stroke ?? Brushes.Black;
-        context.DrawEllipse(null, new Pen(brush, 1.5), new Point(13, 13), 12, 12);
-        context.DrawLine(new Pen(brush, 1), new Point(1, 13), new Point(25, 13));
-        FormattedText letter = Chrome.Text(Letter, 9, brush, bold: true);
-        FormattedText sheet = Chrome.Text(SheetNumber, 7, brush);
-        context.DrawText(letter, new Point(13 - letter.Width / 2, 12 - letter.Height));
-        context.DrawText(sheet, new Point(13 - sheet.Width / 2, 14));
-    }
-}
-
-// A ruler in document units along one edge of the viewport, with the cursor hairline, the
-// horizon mark and one index tab per vanishing point. Clicking a tab selects that point.
+// A ruler in document units along one edge of the viewport, with the cursor hairline and the
+// horizon mark.
 public class Ruler : Control
 {
     public ViewportControl? Viewport { get; set; }
     public bool Vertical { get; set; }
-
-    private readonly List<(double A, double B, int Index)> _tabs = new();
 
     public override void Render(DrawingContext context)
     {
@@ -249,70 +176,8 @@ public class Ruler : Control
             context.DrawLine(new Pen(new SolidColorBrush(palette.Prompt), 1.5), P(at, 0), P(at, size));
         }
 
-        DrawTabs(context, world, length, ink, paper, inkPen, P);
-
         // The heavy rule along the viewport edge.
         context.DrawLine(new Pen(ink, 2), P(0, size - 1), P(length, size - 1));
-    }
-
-    private void DrawTabs(DrawingContext context, World world, double length, IBrush ink, IBrush paper,
-        IPen inkPen, Func<double, double, Point> P)
-    {
-        _tabs.Clear();
-        var indices = new List<int>();
-        var places = new List<TabPlace>();
-        for (int i = 0; i < world.VanishingPoints.Length; i++)
-        {
-            if (world.VanishingPoints[i] is { } point)
-            {
-                Vec2 screen = (point.Pos + world.Camera) * world.Zoom;
-                (TabPlace x, TabPlace y) = Sheet.PlaceTabs(screen, Bounds.Width, Bounds.Height, world.Zoom);
-                indices.Add(i);
-                places.Add(Vertical ? y : x);
-            }
-        }
-
-        // Room on the viewport side of a pinned tab: arrow, and on the top ruler its distance.
-        double room = Vertical ? 12 : 44;
-        double half = Sheet.TabWidth / 2;
-        double[] at = Sheet.Spread(places.Select(place => place.At).ToArray(),
-            places.Select(place => place.Pinned > 0 ? half + room : half).ToArray(),
-            places.Select(place => place.Pinned < 0 ? half + room : half).ToArray(),
-            length);
-        const double size = Sheet.RulerSize;
-        for (int n = 0; n < indices.Count; n++)
-        {
-            int i = indices[n];
-            bool selected = world.SelectionIdx == i;
-            double a = at[n] - Sheet.TabWidth / 2;
-            double b = at[n] + Sheet.TabWidth / 2;
-            _tabs.Add((a, b, i));
-            DrawPoly(context, selected ? ink : paper, inkPen,
-                P(a, size), P(a, 5), P(a + 4, 1), P(b - 4, 1), P(b, 5), P(b, size));
-            Point bandA = P(a, size - 4);
-            Point bandB = P(b, size);
-            context.FillRectangle(world.Styles.VPLines[i].Brush!, new Rect(bandA, bandB));
-            FormattedText figure = Chrome.Text((i + 1).ToString(CultureInfo.InvariantCulture), 11,
-                selected ? paper : ink, bold: true);
-            Point centre = P(at[n], (size - 4) / 2 + 1);
-            context.DrawText(figure, new Point(centre.X - figure.Width / 2, centre.Y - figure.Height / 2));
-
-            TabPlace place = places[n];
-            if (place.Pinned != 0)
-            {
-                double e = place.Pinned < 0 ? b + 3 : a - 3;
-                double d = place.Pinned < 0 ? 6 : -6;
-                DrawPoly(context, ink, null, P(e + d, 5), P(e, 10), P(e + d, 15));
-                if (!Vertical)
-                {
-                    FormattedText past = Chrome.Text(Math.Round(place.Past).ToString(CultureInfo.InvariantCulture),
-                        9, ink, bold: true);
-                    double x = place.Pinned < 0 ? e + 9 : e - 9 - past.Width;
-                    context.FillRectangle(paper, new Rect(x - 2, 1, past.Width + 4, size - 6));
-                    context.DrawText(past, new Point(x, 4));
-                }
-            }
-        }
     }
 
     private static void DrawPoly(DrawingContext context, IBrush? fill, IPen? pen, params Point[] points)
@@ -330,22 +195,5 @@ public class Ruler : Control
         }
 
         context.DrawGeometry(fill, pen, geometry);
-    }
-
-    protected override void OnPointerPressed(PointerPressedEventArgs e)
-    {
-        base.OnPointerPressed(e);
-        Point position = e.GetPosition(this);
-        double along = Vertical ? position.Y : position.X;
-        foreach ((double a, double b, int index) in _tabs)
-        {
-            if (along >= a && along <= b && Viewport is { } viewport)
-            {
-                _ = viewport.RunCommandAsync(viewport.Commands.Single(command => command.Name == "Select vanishing point"),
-                    index);
-                e.Handled = true;
-                return;
-            }
-        }
     }
 }

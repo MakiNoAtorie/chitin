@@ -5,14 +5,13 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
-using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 
 namespace Chitin;
 
-// The drawing-sheet chrome around the viewport: tool tray, rulers, notes, title block and Find.
+// The chrome around the viewport: tool tray, rulers, points panel, foot and Find.
 public partial class MainWindow
 {
     private sealed record TrayTool(string Letter, string Name, string Gesture, string Options, string? Command,
@@ -20,26 +19,28 @@ public partial class MainWindow
 
     private static readonly TrayTool[] TrayTools =
     {
-        new("P", "Points", "Esc", "1-9 drop · Ctrl+1-9 select", "Leave tool / unselect", null),
-        new("T", "Trace", "right-drag", "Ctrl snaps 5° · Shift 15°", null, null),
-        new("B", "Box", "B", "width, depth, height · 1 / 2 lock axis", "Box tool", ToolKind.Box),
-        new("D", "Subdivide", "D", "click a face · 2-9 cells · Enter", "Subdivision tool", ToolKind.Subdivision),
-        new("E", "Ellipse", "E", "click a face · drag the radius", "Ellipse tool", ToolKind.Ellipse)
+        new("P", "Points", "Esc", "1-9 drop a point at the cursor · drag a point to move it",
+            "Leave tool / unselect", null),
+        new("T", "Trace", "right-drag", "Ctrl snaps to 5°, Shift to 15°", null, null),
+        new("B", "Box", "B", "Drag width, then depth, then height", "Box tool", ToolKind.Box),
+        new("D", "Subdivide", "D", "Click a box face or four corners, then 2-9 cells", "Subdivision tool",
+            ToolKind.Subdivision),
+        new("E", "Ellipse", "E", "Click a box face or four corners, then drag the radius", "Ellipse tool",
+            ToolKind.Ellipse)
     };
 
+    private const string PointColumns = "40,*,*,4,22,36,22,26";
+    private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     private readonly List<(TrayTool Tool, Control Cell)> _trayCells = new();
-    private readonly Dictionary<string, TextBlock> _title = new();
-    private readonly List<Button> _densitySteps = new();
-    private TextBox _zoomBox = null!;
-    private string _zoomShown = "";
+    private readonly List<PointRow> _pointRows = new();
+    private TextBlock _pointsEmpty = null!;
     private string? _themePalette;
-    private string _notesKey = "";
     private bool _chromePending;
+    private int _pointsRevision = -1;
     private List<Command> _findRows = new();
-
-    // Detailed panels (Ctrl+K). View state: not saved, not undoable, compact on launch.
-    internal bool Detailed { get; private set; }
     private int _findIndex;
+
+    private sealed record PointRow(Control Row, Button Number, Border Chip, TextBox X, TextBox Y, TextBlock Density);
 
     internal static string ToolHint(ToolKind? tool)
     {
@@ -57,33 +58,31 @@ public partial class MainWindow
         TopRuler.Viewport = Viewport;
         LeftRuler.Viewport = Viewport;
         BuildTray();
-        BuildTitleBlock();
+        BuildPoints();
 
-        // Only typing opens the list; clearing the field on close must not reopen it.
         FindBox.TextChanged += (_, _) =>
         {
-            if (FindBox.IsFocused)
+            if (FindOverlay.IsVisible)
             {
                 _findIndex = 0;
                 ShowFind();
             }
         };
-        FindBox.GotFocus += (_, _) => ShowFind();
         FindBox.LostFocus += (_, _) =>
         {
-            if (!FindPopup.IsPointerOverPopup)
+            if (!FindOverlay.IsPointerOver)
             {
-                FindPopup.IsOpen = false;
+                CloseFind(focusViewport: false);
             }
         };
         // Tunnel: the text box would otherwise take the arrows and Enter itself.
         FindBox.AddHandler(KeyDownEvent, FindBox_KeyDown, RoutingStrategies.Tunnel);
 
+        ZoomButton.Click += (_, _) => RunAsync(() => Viewport.RunCommandAsync("Centre view"));
         Viewport.ViewChanged += ScheduleChrome;
         Viewport.World.StatusChanged += ScheduleChrome;
         Viewport.CurrentFileChanged += ScheduleChrome;
         Viewport.World.Changed += ScheduleChrome;
-        ModeButton.Click += (_, _) => RunAsync(() => Viewport.RunCommandAsync("Detailed panels"));
         UpdateChrome();
     }
 
@@ -108,14 +107,14 @@ public partial class MainWindow
         if (_themePalette != world.PaletteName)
         {
             ApplyTheme(world.ActivePalette);
+            _pointsRevision = -1;
         }
 
         TopRuler.InvalidateVisual();
         LeftRuler.InvalidateVisual();
         UpdateTray();
-        UpdateTitleBlock();
-        UpdateNotes();
-        UpdateInspector();
+        UpdateFoot();
+        UpdatePoints();
     }
 
     private void ApplyTheme(Palette palette)
@@ -137,48 +136,31 @@ public partial class MainWindow
     {
         foreach (TrayTool tool in TrayTools)
         {
-            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("39,*"), MinHeight = 39 };
-            grid.Children.Add(new TextBlock
+            var letter = new TextBlock
             {
                 Text = tool.Letter,
                 FontSize = 19,
                 FontWeight = FontWeight.Bold,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
-            });
-            var label = new StackPanel { Margin = new Thickness(2, 4, 8, 4), VerticalAlignment = VerticalAlignment.Center };
-            label.Children.Add(new TextBlock { Text = tool.Name });
-            label.Children.Add(new TextBlock { Classes = { "caps" }, Text = tool.Gesture.ToUpperInvariant() });
-            label.Children.Add(new TextBlock
-            {
-                Classes = { "options" },
-                Text = tool.Options,
-                TextWrapping = TextWrapping.Wrap,
-                IsVisible = false
-            });
-            Grid.SetColumn(label, 1);
-            grid.Children.Add(label);
-
+            };
             Control cell;
             if (tool.Command is { } name)
             {
-                var button = new Button
-                {
-                    Classes = { "cell" },
-                    Content = grid,
-                    BorderThickness = new Thickness(0, 0, 0, 1)
-                };
-                AutomationProperties.SetName(button, $"{tool.Name} tool");
+                var button = new Button { Classes = { "cell" }, Content = letter, Height = 39 };
                 button.Click += (_, _) => RunAsync(() => Viewport.RunCommandAsync(name));
                 cell = button;
             }
             else
             {
-                cell = new Border { Child = grid, BorderThickness = new Thickness(0, 0, 0, 1) };
-                cell.Bind(Border.BorderBrushProperty, this.GetResourceObservable("Ink"));
+                cell = new Border { Child = letter, Height = 39, Background = Brushes.Transparent };
             }
 
-            TrayPanel.Children.Add(cell);
+            ToolTip.SetTip(cell, $"{tool.Name} ({tool.Gesture})\n{tool.Options}");
+            AutomationProperties.SetName(cell, $"{tool.Name} tool");
+            var rule = new Border { Child = cell, BorderThickness = new Thickness(0, 0, 0, 1) };
+            rule.Bind(Border.BorderBrushProperty, this.GetResourceObservable("Hair"));
+            TrayPanel.Children.Add(rule);
             _trayCells.Add((tool, cell));
         }
     }
@@ -187,130 +169,27 @@ public partial class MainWindow
     {
         foreach ((TrayTool tool, Control cell) in _trayCells)
         {
-            bool active = tool.Command != null && Viewport.Tool == tool.Kind;
-            cell.Classes.Set("on", active);
-            foreach (TextBlock options in cell.GetLogicalDescendants().OfType<TextBlock>()
-                .Where(block => block.Classes.Contains("options")))
-            {
-                options.IsVisible = active && Detailed;
-            }
+            cell.Classes.Set("on", tool.Command != null && Viewport.Tool == tool.Kind);
         }
     }
 
-    private void BuildTitleBlock()
+    // The status message (prompt or error), else the trace-crossing prompt.
+    internal string? FootMessage()
     {
-        // ISO 7200: small spaced label over the value. Zoom and point are set large.
-        void Cell(string key, string label, int row, int column, bool big = false)
+        World world = Viewport.World;
+        if (world.StatusMessage is { } message)
         {
-            var value = new TextBlock { Classes = { big ? "big" : "value" } };
-            var panel = new StackPanel();
-            panel.Children.Add(new TextBlock { Classes = { "caps" }, Text = label });
-            panel.Children.Add(value);
-            if (key == "point")
-            {
-                var coords = new TextBlock();
-                panel.Children.Add(coords);
-                _title["coords"] = coords;
-            }
-
-            var border = new Border
-            {
-                Classes = { "cell" },
-                Child = panel,
-                BorderThickness = new Thickness(column == 0 ? 0 : 1, row == 0 ? 0 : 1, 0, 0)
-            };
-            Grid.SetRow(border, row);
-            Grid.SetColumn(border, column);
-            Grid.SetRowSpan(border, big ? 2 : 1);
-            TitleBlock.Children.Add(border);
-            _title[key] = value;
+            return message;
         }
 
-        Cell("zoom", "ZOOM", 0, 0, big: true);
-        Cell("point", "POINT", 0, 1, big: true);
-        Cell("density", "DENSITY", 0, 2);
-        Cell("cone", "CONE", 0, 3);
-        Cell("tool", "TOOL", 0, 4);
-        Cell("sheet", "SHEET", 1, 2);
-        Cell("size", "SIZE", 1, 3);
-        Cell("palette", "PALETTE", 1, 4);
-
-        // Detailed mode: zoom typed in place, density stepped by its two commands.
-        _zoomBox = new TextBox
+        if (world.TraceLines.Count > 1 &&
+            Geom.GetLineIntersection(world.TraceLines[0].Start, world.TraceLines[0].End,
+                world.TraceLines[1].Start, world.TraceLines[1].End, world.CrazyFar, out _))
         {
-            FontSize = 17,
-            FontWeight = FontWeight.Bold,
-            MinHeight = 0,
-            MinWidth = 0,
-            Width = 70,
-            Padding = new Thickness(0),
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            IsVisible = false
-        };
-        AutomationProperties.SetName(_zoomBox, "Zoom percent");
-        _zoomBox.KeyDown += (_, e) =>
-        {
-            if (e.Key is Key.Enter or Key.Escape)
-            {
-                if (e.Key == Key.Enter)
-                {
-                    ApplyZoomBox();
-                }
-                else
-                {
-                    _zoomBox.Text = _zoomShown;
-                }
-
-                Viewport.Focus();
-                e.Handled = true;
-            }
-        };
-        _zoomBox.LostFocus += (_, _) => ApplyZoomBox();
-        ((StackPanel)_title["zoom"].Parent!).Children.Add(_zoomBox);
-
-        var densityPanel = (StackPanel)_title["density"].Parent!;
-        densityPanel.Children.Remove(_title["density"]);
-        var steps = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-        foreach ((string text, string command) in new[] { ("-", "Lower density"), ("+", "Raise density") })
-        {
-            var step = new Button
-            {
-                Classes = { "cell" },
-                Content = new TextBlock { Text = text },
-                Padding = new Thickness(4, 0),
-                BorderThickness = new Thickness(1),
-                HorizontalAlignment = HorizontalAlignment.Left,
-                IsVisible = false
-            };
-            AutomationProperties.SetName(step, command);
-            step.Click += (_, _) => RunAsync(() => Viewport.RunCommandAsync(command));
-            _densitySteps.Add(step);
-            steps.Children.Add(step);
-            if (text == "-")
-            {
-                steps.Children.Add(_title["density"]);
-            }
+            return "Trace lines cross: Ctrl+Shift+1-9 drops a point there";
         }
 
-        densityPanel.Children.Add(steps);
-    }
-
-    // Only an edited value applies: the shown value is rounded, and re-applying it would move the view.
-    private void ApplyZoomBox()
-    {
-        if (_zoomBox.Text == _zoomShown)
-        {
-            return;
-        }
-
-        string text = (_zoomBox.Text ?? "").Trim().TrimEnd('%');
-        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double percent) &&
-            double.IsFinite(percent))
-        {
-            Viewport.ZoomAt(new Point(Viewport.Bounds.Width / 2, Viewport.Bounds.Height / 2), percent / 100);
-        }
-
-        ScheduleChrome();
+        return null;
     }
 
     private static void Set(TextBlock block, string text)
@@ -321,117 +200,245 @@ public partial class MainWindow
         }
     }
 
-    private void UpdateTitleBlock()
+    private void UpdateFoot()
     {
         World world = Viewport.World;
-        CultureInfo inv = CultureInfo.InvariantCulture;
-        string zoom = string.Format(inv, "{0:0}%", world.Zoom * 100);
-        Set(_title["zoom"], zoom);
-        _title["zoom"].IsVisible = !Detailed;
-        _zoomBox.IsVisible = Detailed;
-        if (!_zoomBox.IsFocused && _zoomBox.Text != zoom)
-        {
-            _zoomBox.Text = zoom;
-        }
+        string? message = FootMessage();
+        Set(Message, message ?? "");
+        Message.IsVisible = message != null;
+        MessageMark.IsVisible = message != null;
+        Message.FontWeight = world.StatusIsError ? FontWeight.Bold : FontWeight.Normal;
+        Set(Hint, ToolHint(Viewport.Tool));
 
-        _zoomShown = zoom;
-
-        foreach (Button step in _densitySteps)
-        {
-            step.IsVisible = Detailed;
-        }
-
+        var parts = new List<string>();
         if (world.SelectionIdx >= 0 && world.VanishingPoints[world.SelectionIdx] is { } point)
         {
-            Set(_title["point"], $"VP {world.SelectionIdx + 1}");
-            Set(_title["coords"], string.Format(inv, "{0:0}, {1:0}",
-                point.Pos.X + world.PicturePlaneWidthHalf, point.Pos.Y + world.PicturePlaneHeightHalf));
-            Set(_title["density"], point.Density == 0 ? "auto" : (point.Density / 4).ToString(inv));
-        }
-        else
-        {
-            Set(_title["point"], "none");
-            Set(_title["coords"], "");
-            Set(_title["density"], "-");
+            string density = point.Density == 0 ? "" : $"  density {point.Density / 4}";
+            parts.Add(string.Format(Inv, "VP {0}  {1:0}, {2:0}{3}", world.SelectionIdx + 1,
+                point.Pos.X + world.PicturePlaneWidthHalf, point.Pos.Y + world.PicturePlaneHeightHalf, density));
         }
 
-        string cone = "off";
         if (world.ShowCone)
         {
-            cone = ConeOfVision.TryBuild(world.VanishingPoints[0]?.Pos, world.VanishingPoints[1]?.Pos,
-                world.PicturePlaneWidth, out ConeOfVision built)
-                ? string.Format(inv, "{0:0}° · d {1:0}", built.FovDegrees, built.Distance)
-                : "needs two points";
+            parts.Add(ConeOfVision.TryBuild(world.VanishingPoints[0]?.Pos, world.VanishingPoints[1]?.Pos,
+                world.PicturePlaneWidth, out ConeOfVision cone)
+                ? string.Format(Inv, "cone {0:0}° · d {1:0}", cone.FovDegrees, cone.Distance)
+                : "cone needs points 1 and 2 either side of the centre");
         }
 
-        Set(_title["cone"], cone);
-        Set(_title["tool"], TrayTools.First(tool => tool.Kind == Viewport.Tool && tool.Command != null).Name);
-        Set(_title["sheet"], Viewport.CurrentFile?.Name ?? "untitled");
-        Set(_title["size"], string.Format(inv, "{0} × {1}", world.PicturePlaneWidth, world.PicturePlaneHeight));
-        Set(_title["palette"], world.PaletteName);
+        Set(Readout, string.Join("   ·   ", parts));
+        Set(ZoomText, string.Format(Inv, "{0:0}%", world.Zoom * 100));
     }
 
-    // NOTE 1 is the tool's hint; later notes are prompts, marked with a square in the prompt colour.
-    internal List<string> NoteTexts()
+    private void BuildPoints()
+    {
+        var header = new DockPanel { Margin = new Thickness(10, 8, 10, 6) };
+        var key = new TextBlock { Classes = { "caps" }, Text = "CTRL K" };
+        DockPanel.SetDock(key, Dock.Right);
+        header.Children.Add(key);
+        header.Children.Add(new TextBlock { Classes = { "caps" }, Text = "POINTS", FontWeight = FontWeight.Bold });
+        PointsList.Children.Add(header);
+
+        var columns = new Grid { ColumnDefinitions = new ColumnDefinitions(PointColumns), Margin = new Thickness(6, 0) };
+        string[] labels = { "#", "X", "Y", "", "DENSITY" };
+        for (int i = 0; i < labels.Length; i++)
+        {
+            var label = new TextBlock
+            {
+                Classes = { "caps" },
+                Text = labels[i],
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            Grid.SetColumn(label, i);
+            Grid.SetColumnSpan(label, i == 4 ? 3 : 1);
+            columns.Children.Add(label);
+        }
+
+        PointsList.Children.Add(columns);
+        for (int i = 0; i < 9; i++)
+        {
+            _pointRows.Add(PointRowFor(i));
+            PointsList.Children.Add(_pointRows[i].Row);
+        }
+
+        _pointsEmpty = new TextBlock
+        {
+            Text = "No points yet. Press 1-9 over the plane, or use Camera › 2-point preset.",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(10, 8),
+            Opacity = 0.8
+        };
+        PointsList.Children.Add(_pointsEmpty);
+    }
+
+    private PointRow PointRowFor(int index)
+    {
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions(PointColumns),
+            Height = 26,
+            Margin = new Thickness(6, 0)
+        };
+        // The paper outline keeps the chip visible on the inverted (selected) row.
+        var chip = new Border { Width = 10, Height = 10, BorderThickness = new Thickness(1) };
+        chip.Bind(Border.BorderBrushProperty, this.GetResourceObservable("Paper"));
+        var number = new Button
+        {
+            Classes = { "cell" },
+            Padding = new Thickness(6, 0),
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 6,
+                Children = { chip, new TextBlock { Text = (index + 1).ToString(Inv) } }
+            }
+        };
+        number.Click += (_, _) => RunAsync(() => Viewport.RunCommandAsync(
+            Viewport.Commands.Single(command => command.Name == "Select vanishing point"), index));
+        AutomationProperties.SetName(number, $"Select point {index + 1}");
+        grid.Children.Add(number);
+
+        TextBox Coord(int column, string axis)
+        {
+            var box = new TextBox { Classes = { "coord" }, Margin = new Thickness(3, 0) };
+            AutomationProperties.SetName(box, $"Point {index + 1} {axis}");
+            box.KeyDown += (_, e) =>
+            {
+                if (e.Key is Key.Enter or Key.Escape)
+                {
+                    // Escape drops the edit: the next update writes the point's value back.
+                    if (e.Key == Key.Escape)
+                    {
+                        box.Text = null;
+                    }
+
+                    Viewport.Focus();
+                    e.Handled = true;
+                }
+            };
+            box.LostFocus += (_, _) => ApplyCoords(index);
+            Grid.SetColumn(box, column);
+            grid.Children.Add(box);
+            return box;
+        }
+
+        TextBox x = Coord(1, "X");
+        TextBox y = Coord(2, "Y");
+        var density = new TextBlock
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(density, 5);
+        grid.Children.Add(density);
+
+        void Step(string text, int column, string name, Func<Task> run)
+        {
+            var button = new Button
+            {
+                Classes = { "cell" },
+                Content = new TextBlock { Text = text, HorizontalAlignment = HorizontalAlignment.Center }
+            };
+            ToolTip.SetTip(button, name);
+            AutomationProperties.SetName(button, $"{name} {index + 1}");
+            button.Click += (_, _) => RunAsync(run);
+            Grid.SetColumn(button, column);
+            grid.Children.Add(button);
+        }
+
+        Step("-", 4, "Lower density", () => DensityAt(index, "Lower density"));
+        Step("+", 6, "Raise density", () => DensityAt(index, "Raise density"));
+        Step("×", 7, "Delete point", () => Viewport.RunCommandAsync(
+            Viewport.Commands.Single(command => command.Name == "Delete vanishing point"), index));
+        return new PointRow(grid, number, chip, x, y, density);
+    }
+
+    // The density commands act on the selected point: select the row's point first.
+    private Task DensityAt(int index, string command)
+    {
+        Viewport.World.SelectionIdx = index;
+        return Viewport.RunCommandAsync(command);
+    }
+
+    // Typed coordinates are document units (plane top-left = 0). Only an edited value moves the point.
+    private void ApplyCoords(int index)
     {
         World world = Viewport.World;
-        var notes = new List<string> { ToolHint(Viewport.Tool) };
-        if (world.StatusMessage is { } message)
+        PointRow row = _pointRows[index];
+        if (world.VanishingPoints[index] is { } point &&
+            double.TryParse(row.X.Text, NumberStyles.Float, Inv, out double x) && double.IsFinite(x) &&
+            double.TryParse(row.Y.Text, NumberStyles.Float, Inv, out double y) && double.IsFinite(y) &&
+            (row.X.Text != Coord(point.Pos.X, world.PicturePlaneWidthHalf) ||
+             row.Y.Text != Coord(point.Pos.Y, world.PicturePlaneHeightHalf)))
         {
-            notes.Add(message);
+            Viewport.MovePoint(index, new Vec2(x - world.PicturePlaneWidthHalf, y - world.PicturePlaneHeightHalf));
         }
 
-        if (world.TraceLines.Count > 1 &&
-            Geom.GetLineIntersection(world.TraceLines[0].Start, world.TraceLines[0].End,
-                world.TraceLines[1].Start, world.TraceLines[1].End, world.CrazyFar, out _))
-        {
-            notes.Add("Trace lines cross: Ctrl+Shift+1-9 drops a point there");
-        }
-
-        return notes;
+        _pointsRevision = -1;
+        ScheduleChrome();
     }
 
-    private void UpdateNotes()
+    private static string Coord(double world, int half)
     {
-        List<string> notes = NoteTexts();
-        bool error = Viewport.World.StatusIsError;
-        string key = string.Join("\n", notes) + error;
-        if (key == _notesKey)
+        return (world + half).ToString("0", Inv);
+    }
+
+    private void UpdatePoints()
+    {
+        World world = Viewport.World;
+        if (!PointsPanel.IsVisible || _pointsRevision == world.Revision)
         {
             return;
         }
 
-        _notesKey = key;
-        Notes.Children.Clear();
-        for (int i = 0; i < notes.Count; i++)
+        _pointsRevision = world.Revision;
+        bool any = false;
+        for (int i = 0; i < _pointRows.Count; i++)
         {
-            // A dock panel, so the text gets the remaining width and trims instead of running on.
-            var row = new DockPanel();
-            var label = new TextBlock
+            PointRow row = _pointRows[i];
+            VanishingPoint? point = world.VanishingPoints[i];
+            row.Row.IsVisible = point != null;
+            if (point == null)
             {
-                Classes = { "caps" },
-                Text = $"NOTE {i + 1}",
-                Width = 56,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            DockPanel.SetDock(label, Dock.Left);
-            row.Children.Add(label);
-            if (i > 0)
-            {
-                var mark = new Border { Width = 8, Height = 8, Margin = new Thickness(0, 0, 6, 0) };
-                mark.Bind(Border.BackgroundProperty, this.GetResourceObservable("Prompt"));
-                DockPanel.SetDock(mark, Dock.Left);
-                row.Children.Add(mark);
+                continue;
             }
 
-            row.Children.Add(new TextBlock
+            any = true;
+            row.Number.Classes.Set("on", world.SelectionIdx == i);
+            row.Chip.Background = world.Styles.VPLines[i].Brush;
+            // A field being typed in keeps its text.
+            if (!row.X.IsFocused)
             {
-                Text = notes[i],
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                FontWeight = error && i == 1 ? FontWeight.Bold : FontWeight.Normal
-            });
-            Notes.Children.Add(row);
+                row.X.Text = Coord(point.Pos.X, world.PicturePlaneWidthHalf);
+            }
+
+            if (!row.Y.IsFocused)
+            {
+                row.Y.Text = Coord(point.Pos.Y, world.PicturePlaneHeightHalf);
+            }
+
+            Set(row.Density, point.Density == 0 ? "auto" : (point.Density / 4).ToString(Inv));
         }
+
+        _pointsEmpty.IsVisible = !any;
+    }
+
+    // Ctrl+K. View state: not saved, not undoable.
+    internal void TogglePoints()
+    {
+        PointsPanel.IsVisible = !PointsPanel.IsVisible;
+        _pointsRevision = -1;
+        UpdateChrome();
+    }
+
+    private void OpenFind()
+    {
+        FindBox.Text = "";
+        _findIndex = 0;
+        FindOverlay.IsVisible = true;
+        ShowFind();
+        // After the menu and the command runner give focus back to the viewport.
+        Dispatcher.UIThread.Post(() => FindBox.Focus(), DispatcherPriority.Background);
     }
 
     private void ShowFind()
@@ -441,12 +448,12 @@ public partial class MainWindow
         FindList.Children.Clear();
         if (_findRows.Count == 0)
         {
-            var empty = new Panel { Height = 25 };
-            var hatch = new Hatch();
-            hatch.Bind(Hatch.StrokeProperty, this.GetResourceObservable("Hair"));
-            empty.Children.Add(hatch);
-            empty.Children.Add(new TextBlock { Text = "No command matches", Margin = new Thickness(8, 4) });
-            FindList.Children.Add(empty);
+            FindList.Children.Add(new TextBlock
+            {
+                Text = "No command matches",
+                Margin = new Thickness(8, 4),
+                Opacity = 0.8
+            });
         }
 
         for (int i = 0; i < _findRows.Count; i++)
@@ -473,13 +480,11 @@ public partial class MainWindow
                 Focusable = false,
                 BorderThickness = new Thickness(0, 0, 0, 1)
             };
-            row.Bind(Button.BorderBrushProperty, this.GetResourceObservable("Hair"));
             row.Classes.Set("on", i == _findIndex);
             row.Click += (_, _) => RunFind(index);
             FindList.Children.Add(row);
         }
 
-        FindPopup.IsOpen = true;
         if (_findIndex < FindList.Children.Count)
         {
             FindList.Children[_findIndex].BringIntoView();
@@ -521,11 +526,75 @@ public partial class MainWindow
         }
     }
 
-    private void CloseFind()
+    // Losing focus closes the list too, but a press on a row lands first (rows take no focus).
+    private void CloseFind(bool focusViewport = true)
     {
+        if (!FindOverlay.IsVisible)
+        {
+            return;
+        }
+
+        FindOverlay.IsVisible = false;
         FindBox.Text = "";
-        FindPopup.IsOpen = false;
         _findIndex = 0;
-        Viewport.Focus();
+        if (focusViewport)
+        {
+            Viewport.Focus();
+        }
+    }
+
+    // F1: the pointer gestures, the tool keys and every shortcut, one row each.
+    private async Task ShowKeysAsync()
+    {
+        var rows = new StackPanel { Margin = new Thickness(16, 12) };
+        foreach (HelpRow row in Commands.HelpRows(Viewport.Commands))
+        {
+            if (row.Keys == " ")
+            {
+                rows.Children.Add(new Border { Height = 8 });
+            }
+            else if (row.Text == " ")
+            {
+                rows.Children.Add(new TextBlock
+                {
+                    Text = row.Keys,
+                    FontWeight = FontWeight.Bold,
+                    Margin = new Thickness(0, 4, 0, 2)
+                });
+            }
+            else
+            {
+                var line = new Grid
+                {
+                    ColumnDefinitions = new ColumnDefinitions("170,*"),
+                    Margin = new Thickness(row.Indent / 2, 1, 0, 1)
+                };
+                line.Children.Add(new TextBlock { Text = row.Keys, FontWeight = FontWeight.Bold });
+                var text = new TextBlock { Text = row.Text, TextWrapping = TextWrapping.Wrap };
+                Grid.SetColumn(text, 1);
+                line.Children.Add(text);
+                rows.Children.Add(line);
+            }
+        }
+
+        var close = new Button
+        {
+            Content = "Close",
+            IsDefault = true,
+            IsCancel = true,
+            Margin = new Thickness(16, 8),
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        DockPanel.SetDock(close, Dock.Bottom);
+        var dialog = new Window
+        {
+            Title = "Keys and gestures",
+            Width = 560,
+            Height = 640,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new DockPanel { Children = { close, new ScrollViewer { Content = rows } } }
+        };
+        close.Click += (_, _) => dialog.Close();
+        await dialog.ShowDialog(this);
     }
 }

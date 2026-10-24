@@ -242,9 +242,9 @@ public sealed class UndoStack
 
     public Action<WorldState>? Dropped;
 
-    // Undo entries newest first, numbered from the oldest kept entry.
-    public IEnumerable<(int Number, string Name)> Revisions =>
-        _undo.Select((entry, i) => (i + 1, entry.Name)).Reverse();
+    // The command an undo or redo would revert, for the Edit menu.
+    public string? UndoName => _undo.Count > 0 ? _undo[^1].Name : null;
+    public string? RedoName => _redo.Count > 0 ? _redo[^1].Name : null;
 
     public bool Holds(Bitmap image)
     {

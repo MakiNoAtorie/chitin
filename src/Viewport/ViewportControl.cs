@@ -297,8 +297,6 @@ public class ViewportControl : Control
         {
             _keys[(command.Keys[i].Key, command.Keys[i].KeyModifiers)] = (command, command.Indexed ? i : 0);
         }
-
-        World.Help = Chitin.Commands.HelpRows(_commands);
     }
 
     private void BuildCommandTable()
@@ -389,7 +387,6 @@ public class ViewportControl : Control
         Edit("Rotate palette colours", new[] { K(Key.S) }, World.RotatePalette);
         Sep();
         On("Centre view", new[] { K(Key.Home) }, CenterCamera);
-        On("Help overlay", new[] { K(Key.F1) }, ToggleHelp);
 
         Group("Tools", true);
         On("Box tool", new[] { K(Key.B) }, () => ToggleTool(ToolKind.Box));
@@ -573,6 +570,20 @@ public class ViewportControl : Control
         World.BumpRevision();
     }
 
+    // The points panel: a typed position is one undo step, like a drag.
+    public void MovePoint(int index, Vec2 position)
+    {
+        if (World.VanishingPoints[index] is not { } point || point.Pos == position)
+        {
+            return;
+        }
+
+        PushUndo("Move vanishing point");
+        point.Pos = position;
+        World.BumpRevision();
+        InvalidateVisual();
+    }
+
     private void SelectPoint(int index)
     {
         World.SelectionIdx = World.VanishingPoints[index] != null ? index : -1;
@@ -714,11 +725,6 @@ public class ViewportControl : Control
         InvalidateVisual();
     }
 
-    public void ToggleHelp()
-    {
-        World.ShowHelp = !World.ShowHelp;
-        InvalidateVisual();
-    }
 
     public void ToggleCone()
     {

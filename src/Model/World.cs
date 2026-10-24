@@ -8,7 +8,6 @@ namespace Chitin;
 public class World
 {
     public const int PicturePlaneBorderSz = 8;
-    public const int HelpColumnWidth = 350;
     public const int MinDocumentSize = 1;
     public const int MaxDocumentSize = 8192;
     public const int MinGridSize = 2;
@@ -46,8 +45,6 @@ public class World
     public string PaletteName { get; private set; } = Palette.Default.Name;
     public bool ShowCone;
     public int DisposedImageCount { get; private set; }
-    public bool ShowHelp;
-    public List<HelpRow> Help = new();
     public bool ShowGrid;
     public int GridStyle;
     public int GridSz = 32;

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
@@ -44,8 +45,6 @@ internal static class SelfTest
             world.ShowGrid = true;
             world.GridStyle = 0;
             world.GridSz = 40;
-            world.ShowHelp = true;
-            world.Help = new ViewportControl().World.Help;
             world.SelectionIdx = 2;
             world.Zoom = 1.25;
             world.Camera = new Vec2((viewportWidth / 2) / world.Zoom, (viewportHeight / 2) / world.Zoom);
@@ -61,7 +60,6 @@ internal static class SelfTest
 
             Render(world, viewportWidth, viewportHeight, RenderMode.Interactive, path);
 
-            world.ShowHelp = false;
             world.Zoom = 1;
             world.Camera = new Vec2(world.PicturePlaneWidthHalf, world.PicturePlaneHeightHalf);
             world.ZoomChanged();
@@ -410,7 +408,6 @@ internal static class SelfTest
             Check("bitmap_dispose", disposeWorld.DisposedImageCount == 99);
             disposeWorld.SetReferenceImage(null);
 
-            world.ShowHelp = false;
             long cached = MeasureAlloc(world, viewportWidth, viewportHeight, rebuild: false);
             long rebuilt = MeasureAlloc(world, viewportWidth, viewportHeight, rebuild: true);
             Console.WriteLine($"ALLOC_RENDER {cached} bytes/frame cached, {rebuilt} rebuilt");
@@ -793,25 +790,6 @@ internal static class SelfTest
                 FileHash(exportPath) == "0120d0b8255f486129c0ca37d8e34e8ceafb4f97c45177f81a2998bce2e5defa" &&
                 FileHash(shapesPath) == "af9cc42976507afa331fbf78a34b6c404d595bca6c0b052cb6e51b3e4aaccb69");
 
-            (TabPlace inX, TabPlace inY) = Sheet.PlaceTabs(new Vec2(300, 200), 800, 600, 2);
-            (TabPlace edgeX, _) = Sheet.PlaceTabs(new Vec2(4, 200), 800, 600, 2);
-            double half = Sheet.TabWidth / 2;
-            double[] spread = Sheet.Spread(new[] { 300.0, 305, 100 }, new[] { half, half, half },
-                new[] { half, half, half }, 800);
-            // Two points pinned past the right end: both tabs stay on the ruler, side by side.
-            double[] pinnedRight = Sheet.Spread(new[] { 789.0, 789 }, new[] { half + 44, half + 44 },
-                new[] { half, half }, 800);
-            Check("vp_tab_onscreen", inX == new TabPlace(300, 0, 0) && inY == new TabPlace(200, 0, 0) &&
-                edgeX == new TabPlace(Sheet.TabWidth / 2, 0, 0) &&
-                spread[0] == 300 && spread[1] == 300 + Sheet.TabWidth + 1 && spread[2] == 100 &&
-                pinnedRight.Max() == 790 && pinnedRight.Max() - pinnedRight.Min() >= Sheet.TabWidth + 45);
-            (TabPlace leftX, TabPlace aboveY) = Sheet.PlaceTabs(new Vec2(-100, -40), 800, 600, 2);
-            (TabPlace rightX, TabPlace belowY) = Sheet.PlaceTabs(new Vec2(900, 700), 800, 600, 2);
-            Check("vp_tab_pinned_offscreen",
-                leftX == new TabPlace(Sheet.TabWidth / 2 + 1, -1, 50) &&
-                aboveY == new TabPlace(Sheet.TabWidth / 2 + 1, -1, 20) &&
-                rightX == new TabPlace(800 - Sheet.TabWidth / 2 - 1, 1, 50) &&
-                belowY == new TabPlace(600 - Sheet.TabWidth / 2 - 1, 1, 50));
             List<RulerTick> atOne = Sheet.Ticks(1, 0, 400);
             List<RulerTick> atTwo = Sheet.Ticks(2, 0, 400);
             List<RulerTick> panned = Sheet.Ticks(2, 3, 400);
@@ -820,13 +798,11 @@ internal static class SelfTest
                 atTwo[1] == new RulerTick(10, 0, 5) && atTwo[5] == new RulerTick(50, 2, 25) &&
                 panned.First(tick => tick.Value == 0).Pos == 6);
 
-            Check("ctrl_k_toggles_mode", CtrlKTogglesMode());
+            Check("ctrl_k_toggles_points", CtrlKTogglesPoints());
             Check("resize_keeps_centre", ResizeKeepsCentre());
             Check("text_field_keys", TextFieldKeys());
             Check("find_closes", FindCloses());
-            Check("zoom_field_edits_only", ZoomFieldEditsOnly());
-            Check("inspector_edit_undoes", InspectorEditUndoes());
-            Check("revisions_name_commands", RevisionsNameCommands());
+            Check("points_panel_edits", PointsPanelEdits());
 
             WriteScreens(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path))!, "screens"));
 
@@ -936,7 +912,10 @@ internal static class SelfTest
         bool emptyDisabled = !undo.IsEnabled && !redo.IsEnabled;
         viewport.ToggleGrid();
         edit.RaiseEvent(new RoutedEventArgs(MenuItem.SubmenuOpenedEvent));
-        bool undoEnabled = undo.IsEnabled && !redo.IsEnabled;
+        bool undoEnabled = undo.IsEnabled && !redo.IsEnabled && (string?)undo.Header == "Undo Toggle grid";
+        viewport.Undo();
+        edit.RaiseEvent(new RoutedEventArgs(MenuItem.SubmenuOpenedEvent));
+        bool redoNamed = (string?)redo.Header == "Redo Toggle grid" && (string?)undo.Header == "Undo";
 
         viewport.World.SaveRig("left_wall");
         camera.RaiseEvent(new RoutedEventArgs(MenuItem.SubmenuOpenedEvent));
@@ -947,7 +926,7 @@ internal static class SelfTest
         rig.Items.OfType<MenuItem>().Single(item => (string?)item.Header == "Delete")
             .RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         bool deleted = viewport.World.Rigs.Count == 0;
-        return emptyDisabled && undoEnabled && listedOnce && deleted;
+        return emptyDisabled && undoEnabled && redoNamed && listedOnce && deleted;
     }
 
     // No key runs two commands; the window's own commands are in the same table.
@@ -965,11 +944,11 @@ internal static class SelfTest
         return keys.Count > 60 && keys.Distinct().Count() == keys.Count && namesUnique && reachable;
     }
 
-    // The F1 overlay lists every command with a key exactly once, with that command's gesture.
+    // The F1 list shows every command with a key exactly once, with that command's gesture.
     private static bool HelpMatchesCommands()
     {
         var viewport = new ViewportControl();
-        List<HelpRow> rows = viewport.World.Help;
+        List<HelpRow> rows = Commands.HelpRows(viewport.Commands);
         return viewport.Commands.Where(command => command.Keys.Length > 0).All(command =>
             rows.Count(row => row.Text == command.Name && row.Keys == command.Gesture) == 1) &&
             !rows.Any(row => viewport.Commands.Any(command => command.Keys.Length == 0 && command.Name == row.Text));
@@ -1528,22 +1507,23 @@ internal static class SelfTest
         return (after - before) / frames;
     }
 
-    // Ctrl+K on the window opens and closes the detailed panels; it is view state, not history.
-    private static bool CtrlKTogglesMode()
+    // Ctrl+K on the window hides and shows the points panel; it is view state, not history.
+    private static bool CtrlKTogglesPoints()
     {
         var window = new MainWindow();
         window.Show();
         try
         {
             var viewport = window.FindControl<ViewportControl>("Viewport")!;
+            var panel = window.FindControl<Border>("PointsPanel")!;
+            bool shown = panel.IsVisible;
             viewport.Focus();
             window.KeyPress(Key.K, RawInputModifiers.Control, PhysicalKey.K, "k");
             window.KeyRelease(Key.K, RawInputModifiers.Control, PhysicalKey.K, "k");
-            bool opened = window.Detailed &&
-                window.FindControl<StackPanel>("InspectorPanel")!.Children.Count > 0;
+            bool hidden = !panel.IsVisible;
             window.KeyPress(Key.K, RawInputModifiers.Control, PhysicalKey.K, "k");
             window.KeyRelease(Key.K, RawInputModifiers.Control, PhysicalKey.K, "k");
-            return opened && !window.Detailed && !viewport.History.CanUndo && !viewport.World.IsDirty;
+            return shown && hidden && panel.IsVisible && !viewport.History.CanUndo && !viewport.World.IsDirty;
         }
         finally
         {
@@ -1551,7 +1531,7 @@ internal static class SelfTest
         }
     }
 
-    // Enter runs the highlighted command and Escape cancels; either way the list closes and stays closed.
+    // Ctrl+F opens Find; Enter runs the highlighted command and Escape cancels; either way it closes.
     private static bool FindCloses()
     {
         var window = new MainWindow();
@@ -1560,18 +1540,26 @@ internal static class SelfTest
         {
             var viewport = window.FindControl<ViewportControl>("Viewport")!;
             var find = window.FindControl<TextBox>("FindBox")!;
-            var popup = window.FindControl<Popup>("FindPopup")!;
-            find.Focus();
+            var overlay = window.FindControl<Border>("FindOverlay")!;
+            void OpenFind()
+            {
+                viewport.Focus();
+                window.KeyPress(Key.F, RawInputModifiers.Control, PhysicalKey.F, "f");
+                window.KeyRelease(Key.F, RawInputModifiers.Control, PhysicalKey.F, "f");
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            OpenFind();
+            bool opened = overlay.IsVisible && find.IsFocused;
             find.Text = "toggle grid";
-            bool opened = popup.IsOpen;
             window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
             Dispatcher.UIThread.RunJobs();
-            bool ran = viewport.World.ShowGrid && !popup.IsOpen && find.Text == "";
-            find.Focus();
+            bool ran = viewport.World.ShowGrid && !overlay.IsVisible && find.Text == "";
+            OpenFind();
             find.Text = "grid";
             window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
             Dispatcher.UIThread.RunJobs();
-            return opened && ran && !popup.IsOpen && find.Text == "" && viewport.IsFocused;
+            return opened && ran && !overlay.IsVisible && find.Text == "" && viewport.IsFocused;
         }
         finally
         {
@@ -1579,40 +1567,7 @@ internal static class SelfTest
         }
     }
 
-    // The zoom field: leaving it unedited keeps the exact zoom, Escape drops an edit, Enter applies one.
-    private static bool ZoomFieldEditsOnly()
-    {
-        var window = new MainWindow();
-        window.Show();
-        try
-        {
-            var viewport = window.FindControl<ViewportControl>("Viewport")!;
-            World world = viewport.World;
-            window.CaptureRenderedFrame()?.Dispose();
-            window.SetDetailed(true);
-            world.Zoom = 1.2345;
-            world.ZoomChanged();
-            window.UpdateChrome();
-            TextBox field = window.FindControl<Grid>("TitleBlock")!.GetLogicalDescendants().OfType<TextBox>().Single();
-            field.Focus();
-            viewport.Focus();
-            bool kept = world.Zoom == 1.2345;
-            field.Focus();
-            field.Text = "250";
-            window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
-            bool dropped = world.Zoom == 1.2345;
-            field.Focus();
-            field.Text = "250%";
-            window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
-            return kept && dropped && Math.Abs(world.Zoom - 2.5) < 1e-9;
-        }
-        finally
-        {
-            window.Close();
-        }
-    }
-
-    // Typing in Find: Ctrl+Z stays with the field, Ctrl+K still switches the panels.
+    // Typing in Find: Ctrl+Z stays with the field, Ctrl+K still hides the points panel.
     private static bool TextFieldKeys()
     {
         var window = new MainWindow();
@@ -1620,14 +1575,17 @@ internal static class SelfTest
         try
         {
             var viewport = window.FindControl<ViewportControl>("Viewport")!;
-            viewport.ToggleGrid();
-            window.FindControl<TextBox>("FindBox")!.Focus();
+            viewport.ApplyCameraPreset(2);
+            viewport.Focus();
+            window.KeyPress(Key.F, RawInputModifiers.Control, PhysicalKey.F, "f");
+            Dispatcher.UIThread.RunJobs();
+            bool focused = window.FindControl<TextBox>("FindBox")!.IsFocused;
             window.KeyPress(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, "z");
             window.KeyRelease(Key.Z, RawInputModifiers.Control, PhysicalKey.Z, "z");
-            bool kept = viewport.World.ShowGrid && viewport.History.CanUndo;
+            bool kept = viewport.World.VanishingPoints[1] != null && viewport.History.CanUndo;
             window.KeyPress(Key.K, RawInputModifiers.Control, PhysicalKey.K, "k");
             window.KeyRelease(Key.K, RawInputModifiers.Control, PhysicalKey.K, "k");
-            return kept && window.Detailed;
+            return focused && kept && !window.FindControl<Border>("PointsPanel")!.IsVisible;
         }
         finally
         {
@@ -1664,8 +1622,8 @@ internal static class SelfTest
         }
     }
 
-    // An inspector cell runs the shortcut's command: one named undo step, and undo reverts it.
-    private static bool InspectorEditUndoes()
+    // A position typed in the points panel moves the point: one named undo step. Escape drops an edit.
+    private static bool PointsPanelEdits()
     {
         var window = new MainWindow();
         window.Show();
@@ -1673,48 +1631,31 @@ internal static class SelfTest
         {
             var viewport = window.FindControl<ViewportControl>("Viewport")!;
             World world = viewport.World;
-            window.SetDetailed(true);
-            Button cell = window.FindControl<StackPanel>("InspectorPanel")!.GetLogicalDescendants()
-                .OfType<Button>().First(button => (string?)button.Tag == "Toggle grid");
-            bool before = world.ShowGrid;
-            cell.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            bool toggled = world.ShowGrid != before &&
-                viewport.History.Revisions.Single().Name == "Toggle grid";
+            world.VanishingPoints[0] = new VanishingPoint(new Vec2(0, 0), 0);
+            world.BumpRevision();
+            window.UpdateChrome();
+            TextBox X() => window.FindControl<StackPanel>("PointsList")!.GetLogicalDescendants().OfType<TextBox>()
+                .Single(box => AutomationProperties.GetName(box) == "Point 1 X");
+            bool shown = X().Text == "320" && X().IsEffectivelyVisible;
+
+            X().Focus();
+            X().Text = "400";
+            window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+            Dispatcher.UIThread.RunJobs();
+            bool moved = VpAt(world, 0, 80, 0) && viewport.History.UndoName == "Move vanishing point" &&
+                viewport.IsFocused;
+
+            X().Focus();
+            X().Text = "999";
+            window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateChrome();
+            bool dropped = VpAt(world, 0, 80, 0) && X().Text == "400";
+
             viewport.Undo();
-            return toggled && world.ShowGrid == before && !viewport.History.CanUndo;
-        }
-        finally
-        {
-            window.Close();
-        }
-    }
-
-    // The revision table lists the last five undo entries by command name, newest first.
-    private static bool RevisionsNameCommands()
-    {
-        var window = new MainWindow();
-        window.Show();
-        try
-        {
-            var viewport = window.FindControl<ViewportControl>("Viewport")!;
-            string[] names =
-            {
-                "Toggle grid", "Cycle grid style", "Larger grid", "Cone of vision", "Rotate palette colours",
-                "Palette charcoal"
-            };
-            foreach (string name in names)
-            {
-                viewport.RunCommandAsync(name).Wait();
-            }
-
-            bool history = viewport.History.Revisions.Select(entry => entry.Name)
-                .SequenceEqual(names.Reverse());
-            window.SetDetailed(true);
-            List<string> texts = window.FindControl<StackPanel>("InspectorPanel")!.GetLogicalDescendants()
-                .OfType<TextBlock>().Select(block => block.Text ?? "").ToList();
-            int newest = texts.IndexOf("Palette charcoal");
-            return history && newest > 0 && texts[newest - 1] == "06" &&
-                names.Skip(1).All(texts.Contains) && !texts.Contains(names[0]);
+            window.UpdateChrome();
+            return shown && moved && dropped && VpAt(world, 0, 0, 0) && X().Text == "320" &&
+                !viewport.History.CanUndo;
         }
         finally
         {
@@ -1731,6 +1672,11 @@ internal static class SelfTest
     private static void WriteScreens(string directory)
     {
         Directory.CreateDirectory(directory);
+        foreach (string old in Directory.GetFiles(directory, "window-*.png"))
+        {
+            File.Delete(old);
+        }
+
         var window = new MainWindow { Width = 1280, Height = 800 };
         window.Show();
         try
@@ -1748,24 +1694,14 @@ internal static class SelfTest
             foreach (Palette palette in Palette.BuiltIns)
             {
                 world.SetPalette(palette.Name);
-                Capture(window, Path.Combine(directory, $"window-{palette.Name}-compact.png"));
+                Capture(window, Path.Combine(directory, $"window-{palette.Name}.png"));
             }
 
-            window.SetDetailed(true);
-            foreach (Palette palette in Palette.BuiltIns)
-            {
-                world.SetPalette(palette.Name);
-                Capture(window, Path.Combine(directory, $"window-{palette.Name}-detailed.png"));
-            }
-
-            window.SetDetailed(false);
             world.SetPalette("ink");
-            var find = window.FindControl<TextBox>("FindBox")!;
-            find.Focus();
-            find.Text = "grid";
+            viewport.RunCommandAsync("Find a command").Wait();
+            Dispatcher.UIThread.RunJobs();
+            window.FindControl<TextBox>("FindBox")!.Text = "grid";
             Capture(window, Path.Combine(directory, "window-find.png"));
-            window.FindControl<Popup>("FindPopup")!.IsOpen = false;
-            find.Text = "";
         }
         finally
         {

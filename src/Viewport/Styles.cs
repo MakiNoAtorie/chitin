@@ -11,13 +11,7 @@ public sealed class Styles
     public readonly IBrush ViewportClear;
     public readonly IBrush PlaneBackground;
     public readonly IBrush PlaneBorder;
-    public readonly IBrush HelpBackground;
-    public readonly IBrush HelpBackgroundAlt;
     public readonly IBrush HudText;
-    public readonly IBrush PromptText;
-    public readonly IBrush HelpTextA;
-    public readonly IBrush HelpTextB;
-    public readonly IBrush HelpTextC;
     public readonly IBrush[] VPFill;
 
     public readonly IPen[] VPOutline;
@@ -60,13 +54,7 @@ public sealed class Styles
         ViewportClear = Brush(palette.Void);
         PlaneBackground = Brush(palette.Paper);
         PlaneBorder = Brush(palette.Border);
-        HelpBackground = Brush(Alpha(palette.Ink, 128));
-        HelpBackgroundAlt = Brush(Alpha(palette.Ink, 32));
         HudText = Brush(palette.Paper);
-        PromptText = Brush(palette.Prompt);
-        HelpTextA = Brush(palette.Prompt);
-        HelpTextB = Brush(palette.Paper);
-        HelpTextC = Brush(Alpha(palette.Paper, 128));
 
         HorizonPen = new Pen(Brush(palette.Horizon), PenWidth(1));
         HorizonVoidPen = new Pen(Brush(Alpha(palette.Horizon, 200)), PenWidth(1),
