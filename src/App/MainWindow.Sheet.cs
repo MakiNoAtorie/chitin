@@ -17,7 +17,7 @@ public partial class MainWindow
     private sealed record TrayTool(string Letter, string Name, string Gesture, string Options, string? Command,
         ToolKind? Kind)
     {
-        // Seven characters at most: the label fits the 40 px tray.
+        // Seven characters at most: the label fits the 56 px tray.
         public string Label => Name == "Subdivide" ? "DIVIDE" : Name.ToUpperInvariant();
     }
 
@@ -163,7 +163,7 @@ public partial class MainWindow
                     new TextBlock
                     {
                         Text = tool.Label,
-                        FontSize = 7,
+                        FontSize = 10,
                         HorizontalAlignment = HorizontalAlignment.Center
                     }
                 }
@@ -171,13 +171,13 @@ public partial class MainWindow
             Control cell;
             if (tool.Command is { } name)
             {
-                var button = new Button { Classes = { "cell" }, Content = letter, Height = 46 };
+                var button = new Button { Classes = { "cell" }, Content = letter, Height = 50 };
                 button.Click += (_, _) => RunAsync(() => Viewport.RunCommandAsync(name));
                 cell = button;
             }
             else
             {
-                cell = new Border { Child = letter, Height = 46, Background = Brushes.Transparent };
+                cell = new Border { Child = letter, Height = 50, Background = Brushes.Transparent };
             }
 
             ToolTip.SetTip(cell, $"{tool.Name} ({tool.Gesture})\n{tool.Options}");

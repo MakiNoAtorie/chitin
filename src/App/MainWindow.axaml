@@ -61,7 +61,7 @@
     </Style>
   </Window.Styles>
 
-  <Grid x:Name="Frame" RowDefinitions="Auto,20,*,28" ColumnDefinitions="40,20,*,Auto">
+  <Grid x:Name="Frame" RowDefinitions="Auto,20,*,28" ColumnDefinitions="56,20,*,Auto">
     <Border Grid.ColumnSpan="4" BorderBrush="{DynamicResource Ink}" BorderThickness="0,0,0,1">
       <Menu x:Name="MainMenu" Background="Transparent" Closed="Menu_Closed" />
     </Border>
