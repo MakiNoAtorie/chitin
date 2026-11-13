@@ -175,7 +175,7 @@ The window is one layout with no modes (`MainWindow.axaml`, `MainWindow.Sheet.cs
   colour; an error is bold) or else "Trace lines cross" when the two trace lines intersect, then
   the active tool's hint, trimmed; on the right, the selected point (`VP n  x, y`, and its density
   when not automatic), the cone readout when the cone is on (`cone FOV° · d D`, or that it needs
-  points 1 and 2 either side of the centre), then `-`, the zoom percentage and `+`: the outer cells
+  points 1 and 2 either side of the centre of vision), then `-`, the zoom percentage and `+`: the outer cells
   run Zoom out and Zoom in, the percentage runs Centre view.
 - Find (`Ctrl+F`): a field and the matching commands in a 440 px box over the top of the viewport
   (§9).
@@ -285,7 +285,7 @@ midpoints of the projected edges).
 `V` toggles the overlay (persisted as `showCone`). The principal point `P` is the foot of the
 perpendicular from the picture-plane centre `(0, 0)` onto the horizon VP0-VP1. Project VP0 and VP1
 onto the horizon direction `normalize(VP1 - VP0)`; their signed distances from `P` must have opposite signs, otherwise the overlay draws nothing and the
-foot's cone readout says it needs points 1 and 2 either side of the centre. With `d = sqrt(|x0| * |x1|)`:
+foot's cone readout says it needs points 1 and 2 either side of `P`, the centre of vision. With `d = sqrt(|x0| * |x1|)`:
 
 - station point `S = P + d * n` in world units, `n` the unit normal to the horizon on the +Y side
   (below the horizon);

@@ -227,7 +227,7 @@ public partial class MainWindow
             parts.Add(ConeOfVision.TryBuild(world.VanishingPoints[0]?.Pos, world.VanishingPoints[1]?.Pos,
                 world.PicturePlaneWidth, out ConeOfVision cone)
                 ? string.Format(Inv, "cone {0:0}° · d {1:0}", cone.FovDegrees, cone.Distance)
-                : "cone needs points 1 and 2 either side of the centre");
+                : "cone needs points 1 and 2 either side of the centre of vision");
         }
 
         Set(Readout, string.Join("   ·   ", parts));
