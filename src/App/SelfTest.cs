@@ -126,8 +126,7 @@ internal static class SelfTest
                 inverse is { } unit && Distance(unit, new Vec2(0.3, 0.7)) <= 1e-9);
 
             (Vec2 A, Vec2 B)[] subdivisionLines = SubdivisionGeometry.BuildLines(projectedQuad, 4, 3);
-            Check("subdivision_counts", subdivisionLines.Length == 5 &&
-                SubdivisionGeometry.CellCount(4, 3) == 12);
+            Check("subdivision_counts", subdivisionLines.Length == 5);
 
             Vec2 vanishingPoint = new Vec2(0, 0);
             Vec2 edgeNear = new Vec2(300, 0);
@@ -175,6 +174,16 @@ internal static class SelfTest
                 Math.Abs(cone.Radius - 230.9401) <= 0.001 &&
                 !ConeOfVision.TryBuild(new Vec2(-400, 0), new Vec2(-200, 0), 640, out _) &&
                 !ConeOfVision.TryBuild(new Vec2(0, 0), new Vec2(400, 0), 640, out _));
+
+            bool tiltOk = ConeOfVision.TryBuild(new Vec2(-300, -100), new Vec2(200, 400), 640,
+                out ConeOfVision tilt);
+            Check("cone_principal_on_horizon", tiltOk &&
+                Distance(tilt.Principal, new Vec2(-100, 100)) <= 1e-3 &&
+                Distance(tilt.Station, new Vec2(-344.949, 344.949)) <= 1e-3 &&
+                Math.Abs(((tilt.Station.X - -300) * (tilt.Station.X - 200)) +
+                    ((tilt.Station.Y - -100) * (tilt.Station.Y - 400))) <= 1e-3);
+
+            Check("restore_trace_nulls_zoom", RestoreTraceAndZoom());
 
             var coneWorld = new World();
             coneWorld.ShowCone = true;
@@ -2395,6 +2404,27 @@ internal static class SelfTest
         {
             return exception.Message.Contains(message);
         }
+    }
+
+    // A null trace line must not take a slot or load, and zoom is clamped to the shared limits.
+    private static bool RestoreTraceAndZoom()
+    {
+        var a = new TraceLine(new Vec2(0, 0), new Vec2(1, 1));
+        var b = new TraceLine(new Vec2(2, 2), new Vec2(3, 3));
+        var state = new WorldState { Zoom = 100 };
+        state.TraceLines.AddRange(new TraceLine[] { null!, a, b });
+        var world = new World();
+        world.Restore(state);
+        bool traces = world.TraceLines.Count == 2 && world.TraceLines[0].Start.X == 0 &&
+            world.TraceLines[1].Start.X == 2;
+        bool maxZoom = world.Zoom == World.MaxZoom;
+        state.Zoom = 0;
+        world.Restore(state);
+        return traces && maxZoom && world.Zoom == World.MinZoom && ReadFails(
+            "{\"doc\":{\"w\":640,\"h\":480},\"grid\":{\"show\":false,\"style\":0,\"size\":32}," +
+            "\"reference\":{},\"vps\":[null,null,null,null,null,null,null,null,null]," +
+            "\"traceLines\":[null],\"boxes\":[],\"subdivisions\":[],\"ellipses\":[]}",
+            "required section");
     }
 
     // A dropped box moves the shapes on later boxes to the new index; shapes on the dropped box keep their quad.

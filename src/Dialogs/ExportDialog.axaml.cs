@@ -25,18 +25,16 @@ public partial class ExportDialog : Window
         _planeHeight = height;
         OutputWidth = width;
         OutputHeight = height;
-        NumericUpDown widthBox = this.FindControl<NumericUpDown>("WidthBox")!;
-        NumericUpDown heightBox = this.FindControl<NumericUpDown>("HeightBox")!;
         // The output keeps the plane's aspect ratio, so PNG and SVG show the same area.
         int longest = Math.Max(width, height);
-        widthBox.Maximum = Math.Max(1, World.MaxDocumentSize * width / longest);
-        heightBox.Maximum = Math.Max(1, World.MaxDocumentSize * height / longest);
-        widthBox.Value = width;
-        heightBox.Value = height;
-        widthBox.ValueChanged += (_, _) => Link(widthBox, heightBox, _planeWidth, _planeHeight);
-        heightBox.ValueChanged += (_, _) => Link(heightBox, widthBox, _planeHeight, _planeWidth);
-        this.FindControl<RadioButton>("PngRadio")!.IsCheckedChanged += (_, _) => UpdateFormat();
-        this.FindControl<RadioButton>("SvgRadio")!.IsCheckedChanged += (_, _) => UpdateFormat();
+        WidthBox.Maximum = Math.Max(1, World.MaxDocumentSize * width / longest);
+        HeightBox.Maximum = Math.Max(1, World.MaxDocumentSize * height / longest);
+        WidthBox.Value = width;
+        HeightBox.Value = height;
+        WidthBox.ValueChanged += (_, _) => Link(WidthBox, HeightBox, _planeWidth, _planeHeight);
+        HeightBox.ValueChanged += (_, _) => Link(HeightBox, WidthBox, _planeHeight, _planeWidth);
+        PngRadio.IsCheckedChanged += (_, _) => UpdateFormat();
+        SvgRadio.IsCheckedChanged += (_, _) => UpdateFormat();
         UpdateFormat();
     }
 
@@ -54,16 +52,15 @@ public partial class ExportDialog : Window
 
     private void UpdateFormat()
     {
-        bool svg = this.FindControl<RadioButton>("SvgRadio")!.IsChecked == true;
-        this.FindControl<CheckBox>("TransparentBox")!.IsEnabled = !svg;
+        TransparentBox.IsEnabled = SvgRadio.IsChecked != true;
     }
 
     private void Ok_Click(object? sender, RoutedEventArgs e)
     {
-        IsSvg = this.FindControl<RadioButton>("SvgRadio")!.IsChecked == true;
-        OutputWidth = (int)(this.FindControl<NumericUpDown>("WidthBox")!.Value ?? 640);
-        OutputHeight = (int)(this.FindControl<NumericUpDown>("HeightBox")!.Value ?? 480);
-        Transparent = !IsSvg && this.FindControl<CheckBox>("TransparentBox")!.IsChecked == true;
+        IsSvg = SvgRadio.IsChecked == true;
+        OutputWidth = (int)(WidthBox.Value ?? _planeWidth);
+        OutputHeight = (int)(HeightBox.Value ?? _planeHeight);
+        Transparent = !IsSvg && TransparentBox.IsChecked == true;
         Close(true);
     }
 

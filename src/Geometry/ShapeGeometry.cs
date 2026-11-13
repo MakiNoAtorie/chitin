@@ -44,10 +44,6 @@ public static class SubdivisionGeometry
         }
     }
 
-    public static int CellCount(int n, int m)
-    {
-        return Math.Clamp(n, 1, MaxCells) * Math.Clamp(m, 1, MaxCells);
-    }
 }
 
 public static class EllipseGeometry

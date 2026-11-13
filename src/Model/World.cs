@@ -14,6 +14,7 @@ public class World
     public const int MaxGridSize = 4096;
     public const double MinReferenceScale = 0.25;
     public const double MaxReferenceScale = 4;
+    public const double MinZoom = 0.05, MaxZoom = 5;
 
     public int PicturePlaneWidth;
     public int PicturePlaneHeight;
@@ -171,7 +172,7 @@ public class World
         Bitmap? previousImage = BackgroundImg;
         BackgroundImg = state.Background;
         ReleaseImage(previousImage);
-        Zoom = Math.Clamp(state.Zoom, 0.05, 5);
+        Zoom = Math.Clamp(state.Zoom, MinZoom, MaxZoom);
         Camera = state.Camera;
 
         VanishingPoints = new VanishingPoint?[9];
@@ -184,7 +185,7 @@ public class World
         }
 
         TraceLines = new List<TraceLine>();
-        foreach (TraceLine traceLine in state.TraceLines.Take(2))
+        foreach (TraceLine traceLine in state.TraceLines.Where(t => t != null).Take(2))
         {
             TraceLines.Add(new TraceLine(traceLine.Start, traceLine.End));
         }

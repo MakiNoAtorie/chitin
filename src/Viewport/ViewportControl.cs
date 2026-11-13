@@ -29,7 +29,10 @@ public class ViewportControl : Control
     private string? _referenceRun;
     private long _referenceRunTime;
     private bool _spaceHeld;
-    private Vec2 _mouseWorld = new();
+    private Point _pointer;
+
+    // Derived, not stored: a camera change between pointer moves must not leave it stale.
+    private Vec2 MouseWorld => ToWorld(_pointer);
     private Bitmap? _clipboardBitmap;
     private IStorageFile? _projectFile;
 
@@ -69,6 +72,12 @@ public class ViewportControl : Control
             CenterCamera();
         }
 
+        // Keys, pans and resizes move the camera between pointer moves: the preview follows the pointer.
+        if (PointerPosition is { } pointer && World.Overlay is ConstructionMode tool)
+        {
+            tool.MouseMoved(pointer, MouseWorld, KeyModifiers.None);
+        }
+
         Renderer.Draw(context, World, Bounds.Size, RenderMode.Interactive);
         ViewChanged?.Invoke();
     }
@@ -97,7 +106,7 @@ public class ViewportControl : Control
         }
 
         double zoom = Math.Clamp(Math.Min(1, Math.Min((double)width / World.PicturePlaneWidth,
-            (double)height / World.PicturePlaneHeight)), 0.05, 5);
+            (double)height / World.PicturePlaneHeight)), World.MinZoom, World.MaxZoom);
 
         World.Zoom = zoom;
         World.Camera = new Vec2((width / 2) / zoom, (height / 2) / zoom);
@@ -129,7 +138,7 @@ public class ViewportControl : Control
         World.ClearError();
 
         Point position = e.GetPosition(this);
-        _mouseWorld = ToWorld(position);
+        _pointer = position;
 
         PointerUpdateKind kind = e.GetCurrentPoint(this).Properties.PointerUpdateKind;
         MouseMode? mode = null;
@@ -153,7 +162,7 @@ public class ViewportControl : Control
         }
         else if (kind == PointerUpdateKind.LeftButtonPressed && _construction != null)
         {
-            _construction.Begin(position, _mouseWorld, e.KeyModifiers);
+            _construction.Begin(position, MouseWorld, e.KeyModifiers);
             World.Overlay = _construction;
             _dragButton = MouseButton.Left;
             e.Pointer.Capture(this);
@@ -163,7 +172,7 @@ public class ViewportControl : Control
         else if (kind == PointerUpdateKind.LeftButtonPressed && !_traceTool)
         {
             // A click on the empty plane places the next point; with a point selected it only unselects.
-            int hit = World.PointAt(_mouseWorld, GrabRadius / World.Zoom);
+            int hit = World.PointAt(MouseWorld, GrabRadius / World.Zoom);
             _placeOnClick = hit < 0 && World.SelectionIdx < 0;
             World.SelectionIdx = hit;
             World.BumpRevision(false);
@@ -177,7 +186,7 @@ public class ViewportControl : Control
 
         if (mode != null)
         {
-            mode.Init(position, _mouseWorld);
+            mode.Init(position, MouseWorld);
             World.Overlay = mode;
             _dragButton = kind.GetMouseButton();
             e.Pointer.Capture(this);
@@ -190,14 +199,17 @@ public class ViewportControl : Control
     {
         base.OnPointerMoved(e);
         Point position = e.GetPosition(this);
-        _mouseWorld = ToWorld(position);
+        _pointer = position;
         PointerPosition = position;
         ViewChanged?.Invoke();
         // Only an overlay or a change of hovered point redraws on a pointer move.
         if (World.Overlay != null)
         {
-            World.Overlay.MouseMoved(position, _mouseWorld, e.KeyModifiers);
-            InvalidateVisual();
+            World.Overlay.MouseMoved(position, MouseWorld, e.KeyModifiers);
+            if (World.Overlay.NeedsRedraw)
+            {
+                InvalidateVisual();
+            }
         }
 
         UpdateHover();
@@ -211,7 +223,7 @@ public class ViewportControl : Control
     {
         int hover = World.Overlay is VanishingPointMode ? World.SelectionIdx
             : World.Overlay != null || _spaceHeld || _traceTool ? -1
-            : World.PointAt(_mouseWorld, GrabRadius / World.Zoom);
+            : World.PointAt(MouseWorld, GrabRadius / World.Zoom);
         if (hover != World.HoverIdx)
         {
             World.HoverIdx = hover;
@@ -280,7 +292,7 @@ public class ViewportControl : Control
         _dragButton = null;
         if (_placeOnClick && World.Overlay is VanishingPointMode { Dragged: false })
         {
-            PlaceNextPoint(_mouseWorld);
+            PlaceNextPoint(MouseWorld);
         }
 
         _placeOnClick = false;
@@ -385,7 +397,7 @@ public class ViewportControl : Control
             InvalidateVisual();
         }
 
-        _mouseWorld = ToWorld(position);
+        _pointer = position;
         UpdateHover();
         e.Handled = true;
     }
@@ -417,7 +429,7 @@ public class ViewportControl : Control
     public void ZoomAt(Point anchor, double zoom)
     {
         Vec2 before = ToWorld(anchor);
-        World.Zoom = Math.Clamp(zoom, 0.05, 5);
+        World.Zoom = Math.Clamp(zoom, World.MinZoom, World.MaxZoom);
         Vec2 after = ToWorld(anchor);
         World.Camera = World.Camera + after - before;
         World.ZoomChanged();
@@ -680,7 +692,7 @@ public class ViewportControl : Control
             return;
         }
 
-        double y = PointerPosition != null ? _mouseWorld.Y : first.Pos.Y;
+        double y = PointerPosition != null ? MouseWorld.Y : first.Pos.Y;
         if (World.VanishingPoints.Take(2).All(point => point == null || point.Pos.Y == y))
         {
             return;
@@ -722,7 +734,7 @@ public class ViewportControl : Control
     {
         PushUndo("Drop vanishing point at cursor");
         World.VanishingPoints[index] ??= new VanishingPoint(new Vec2(), 0);
-        World.VanishingPoints[index]!.Pos = _mouseWorld;
+        World.VanishingPoints[index]!.Pos = MouseWorld;
         World.SelectionIdx = index;
         World.BumpRevision();
     }
@@ -1311,6 +1323,11 @@ public class ViewportControl : Control
 
             var dialog = new ResizeDialog(World.PicturePlaneWidth, World.PicturePlaneHeight);
             if (!await dialog.ShowDialog<bool>(owner))
+            {
+                return;
+            }
+
+            if (dialog.NewWidth == World.PicturePlaneWidth && dialog.NewHeight == World.PicturePlaneHeight)
             {
                 return;
             }

@@ -16,7 +16,6 @@ internal abstract class ConstructionMode : MouseMode
 {
     protected readonly Action PushUndo;
     protected Vec2 CurrentWorld;
-    protected bool Dragging;
     protected readonly List<Vec2> Corners = new();
 
     protected ConstructionMode(World world, Action pushUndo) : base(world)
@@ -26,6 +25,8 @@ internal abstract class ConstructionMode : MouseMode
 
     public abstract ToolKind Kind { get; }
 
+    public override bool NeedsRedraw => Corners.Count > 0;
+
     // The current step for the foot, or null for the tool's general hint.
     public virtual string? Hint => Corners.Count > 0 ? $"Corner {Corners.Count + 1} of 4 · Backspace restarts" : null;
 
@@ -33,18 +34,12 @@ internal abstract class ConstructionMode : MouseMode
     {
         base.Init(screen, world);
         CurrentWorld = world;
-        Dragging = true;
     }
 
     public override void MouseMoved(Point screen, Vec2 world, KeyModifiers modifiers)
     {
         base.MouseMoved(screen, world, modifiers);
         CurrentWorld = world;
-    }
-
-    public override void MouseUp()
-    {
-        Dragging = false;
     }
 
     public virtual bool HandleKey(Key key, KeyModifiers modifiers)
@@ -122,12 +117,11 @@ internal abstract class ConstructionMode : MouseMode
 // the points, so it follows them when they move.
 internal sealed class BoxTool : ConstructionMode
 {
-    // A shorter move is a click, and a shorter edge is no edge, in screen pixels.
+    // A shorter edge is no edge, in screen pixels.
     private const double MinPixels = 4;
 
     private int _stage;
     private bool _starting;
-    private Point _press;
     private Vec2 _p0;
     private Vec2 _p1;
     private Vec2 _p2;
@@ -141,6 +135,8 @@ internal sealed class BoxTool : ConstructionMode
 
     public override ToolKind Kind => ToolKind.Box;
 
+    public override bool NeedsRedraw => _stage > 0;
+
     public override string? Hint => _stage switch
     {
         1 => "Box 2 of 4: move along a guide, click to set the width · 1 / 2 pick point 1 or 2 · Backspace restarts",
@@ -152,12 +148,12 @@ internal sealed class BoxTool : ConstructionMode
     public override void Begin(Point screen, Vec2 world, KeyModifiers modifiers)
     {
         base.Begin(screen, world, modifiers);
-        _press = screen;
+        // Reset here, not only on release: a lost capture ends the gesture without MouseUp.
+        _starting = _stage == 0;
         if (_stage == 0)
         {
             _p0 = world;
             _forced = -1;
-            _starting = true;
             _stage = 1;
         }
     }
@@ -165,7 +161,7 @@ internal sealed class BoxTool : ConstructionMode
     public override void MouseUp()
     {
         base.MouseUp();
-        bool click = new Vec2(_press.X, _press.Y).DistFrom(LastScreen) < MinPixels;
+        bool click = PressScreen.DistFrom(LastScreen) < ClickSlop;
         if (_stage == 1 && _starting)
         {
             // The press that placed the first corner: a click waits for the width click.
@@ -385,14 +381,13 @@ internal sealed class BoxTool : ConstructionMode
 // unit-square coordinates, so the ellipse lies in the face's plane.
 internal sealed class EllipseTool : ConstructionMode
 {
-    // A shorter move is a click, and a shorter radius is no radius, in screen pixels.
+    // A shorter radius is no radius, in screen pixels.
     private const double MinPixels = 4;
 
     private Vec2[]? _quad;
     private Homography _homography;
     private Vec2? _centre;
     private bool _placing;
-    private Point _press;
     private int _box = -1;
     private int _face;
 
@@ -401,6 +396,8 @@ internal sealed class EllipseTool : ConstructionMode
     }
 
     public override ToolKind Kind => ToolKind.Ellipse;
+
+    public override bool NeedsRedraw => _quad != null || Corners.Count > 0;
 
     public override string? Hint => _quad == null
         ? Corners.Count > 0
@@ -413,7 +410,8 @@ internal sealed class EllipseTool : ConstructionMode
     public override void Begin(Point screen, Vec2 world, KeyModifiers modifiers)
     {
         base.Begin(screen, world, modifiers);
-        _press = screen;
+        // A lost capture ends the gesture without MouseUp: a stale flag would swallow the radius click.
+        _placing = false;
         if (_quad == null)
         {
             if (PickQuad(world) is { } quad)
@@ -440,7 +438,7 @@ internal sealed class EllipseTool : ConstructionMode
         if (_placing)
         {
             _placing = false;
-            if (new Vec2(_press.X, _press.Y).DistFrom(LastScreen) < MinPixels)
+            if (PressScreen.DistFrom(LastScreen) < ClickSlop)
             {
                 return;
             }

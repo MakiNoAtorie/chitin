@@ -15,7 +15,6 @@ public class MouseMode
     public Vec2 PressScreen = new();
     public Vec2 LastScreen = new();
     public Vec2 MoveDelta = new();
-    public bool HasMoved;
 
     // Moved beyond the click slop since the press.
     public bool Dragged;
@@ -30,7 +29,6 @@ public class MouseMode
         LastScreen = new Vec2(screen.X, screen.Y);
         PressScreen = LastScreen;
         MoveDelta = new Vec2();
-        HasMoved = false;
         Dragged = false;
     }
 
@@ -39,7 +37,6 @@ public class MouseMode
         var position = new Vec2(screen.X, screen.Y);
         MoveDelta = position - LastScreen;
         LastScreen = position;
-        HasMoved = true;
         Dragged |= position.DistFrom(PressScreen) >= ClickSlop;
     }
 
@@ -50,6 +47,9 @@ public class MouseMode
     public virtual void DrawOver(DrawingContext context)
     {
     }
+
+    // False when DrawOver would draw nothing: a pointer move then skips the redraw.
+    public virtual bool NeedsRedraw => true;
 }
 
 internal sealed class CameraMode : MouseMode

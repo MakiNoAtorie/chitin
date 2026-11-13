@@ -47,7 +47,15 @@ public readonly record struct ConeOfVision(
             return false;
         }
 
-        cone = new ConeOfVision(new Vec2(), new Vec2(0, distance), a, b, distance, fov, radius);
+        // Principal is the foot of the centre on the horizon; x0, x1 are already measured from it.
+        var principal = a - x0 * direction;
+        var normal = new Vec2(-direction.Y, direction.X);
+        if (normal.Y < 0 || (normal.Y == 0 && normal.X < 0))
+        {
+            normal = -1 * normal;
+        }
+
+        cone = new ConeOfVision(principal, principal + distance * normal, a, b, distance, fov, radius);
         return true;
     }
 }

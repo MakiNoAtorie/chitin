@@ -84,7 +84,7 @@
       <DockPanel>
         <TextBox x:Name="FindBox" DockPanel.Dock="Top" Watermark="Find a command" BorderThickness="0,0,0,1"
                  AutomationProperties.Name="Find a command" />
-        <ScrollViewer x:Name="FindScroll" MaxHeight="320">
+        <ScrollViewer MaxHeight="320">
           <StackPanel x:Name="FindList" />
         </ScrollViewer>
       </DockPanel>

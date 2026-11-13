@@ -1,7 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Threading;
 
 namespace Chitin;
 
@@ -52,22 +51,27 @@ public partial class MainWindow : Window
         return $"{fileName ?? "Untitled"}{(dirty ? " *" : "")} - Chitin";
     }
 
-    private async void Window_Closing(object? sender, WindowClosingEventArgs e)
+    private void Window_Closing(object? sender, WindowClosingEventArgs e)
+    {
+        if (_forceClose || !Viewport.World.IsDirty)
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        if (_confirmingClose)
+        {
+            return;
+        }
+
+        _confirmingClose = true;
+        _ = ConfirmCloseAsync();
+    }
+
+    private async Task ConfirmCloseAsync()
     {
         try
         {
-            if (_forceClose || !Viewport.World.IsDirty)
-            {
-                return;
-            }
-
-            e.Cancel = true;
-            if (_confirmingClose)
-            {
-                return;
-            }
-
-            _confirmingClose = true;
             if (await Viewport.ConfirmDiscardAsync())
             {
                 _forceClose = true;

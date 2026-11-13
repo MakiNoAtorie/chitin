@@ -11,6 +11,15 @@ public readonly struct Homography
     private readonly double _m31;
     private readonly double _m32;
     private readonly double _m33;
+    private readonly double _i11;
+    private readonly double _i12;
+    private readonly double _i13;
+    private readonly double _i21;
+    private readonly double _i22;
+    private readonly double _i23;
+    private readonly double _i31;
+    private readonly double _i32;
+    private readonly double _i33;
 
     public bool IsInvertible { get; }
 
@@ -27,6 +36,21 @@ public readonly struct Homography
         _m32 = m32;
         _m33 = m33;
         IsInvertible = invertible;
+
+        // Inverse is cached because MapInverse runs on every mouse move.
+        if (invertible)
+        {
+            double determinant = Determinant(m11, m12, m13, m21, m22, m23, m31, m32, m33);
+            _i11 = (m22 * m33 - m23 * m32) / determinant;
+            _i12 = (m13 * m32 - m12 * m33) / determinant;
+            _i13 = (m12 * m23 - m13 * m22) / determinant;
+            _i21 = (m23 * m31 - m21 * m33) / determinant;
+            _i22 = (m11 * m33 - m13 * m31) / determinant;
+            _i23 = (m13 * m21 - m11 * m23) / determinant;
+            _i31 = (m21 * m32 - m22 * m31) / determinant;
+            _i32 = (m12 * m31 - m11 * m32) / determinant;
+            _i33 = (m11 * m22 - m12 * m21) / determinant;
+        }
     }
 
     public static Homography FromUnitSquare(Vec2 a, Vec2 b, Vec2 c, Vec2 d)
@@ -99,11 +123,6 @@ public readonly struct Homography
             (_m21 * u + _m22 * v + _m23) / denominator);
     }
 
-    public Vec2 Map(Vec2 point)
-    {
-        return Map(point.X, point.Y);
-    }
-
     public Vec2? MapInverse(Vec2 point)
     {
         if (!IsInvertible)
@@ -111,31 +130,15 @@ public readonly struct Homography
             return null;
         }
 
-        double determinant = Determinant(_m11, _m12, _m13, _m21, _m22, _m23, _m31, _m32, _m33);
-        if (!double.IsFinite(determinant) || Math.Abs(determinant) < 1e-12)
-        {
-            return null;
-        }
-
-        double i11 = (_m22 * _m33 - _m23 * _m32) / determinant;
-        double i12 = (_m13 * _m32 - _m12 * _m33) / determinant;
-        double i13 = (_m12 * _m23 - _m13 * _m22) / determinant;
-        double i21 = (_m23 * _m31 - _m21 * _m33) / determinant;
-        double i22 = (_m11 * _m33 - _m13 * _m31) / determinant;
-        double i23 = (_m13 * _m21 - _m11 * _m23) / determinant;
-        double i31 = (_m21 * _m32 - _m22 * _m31) / determinant;
-        double i32 = (_m12 * _m31 - _m11 * _m32) / determinant;
-        double i33 = (_m11 * _m22 - _m12 * _m21) / determinant;
-
-        double denominator = i31 * point.X + i32 * point.Y + i33;
+        double denominator = _i31 * point.X + _i32 * point.Y + _i33;
         if (Math.Abs(denominator) < 1e-12)
         {
             return null;
         }
 
         return new Vec2(
-            (i11 * point.X + i12 * point.Y + i13) / denominator,
-            (i21 * point.X + i22 * point.Y + i23) / denominator);
+            (_i11 * point.X + _i12 * point.Y + _i13) / denominator,
+            (_i21 * point.X + _i22 * point.Y + _i23) / denominator);
     }
 
     private static Homography Invalid(Vec2 a)

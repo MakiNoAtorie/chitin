@@ -282,12 +282,13 @@ midpoints of the projected edges).
 
 ## 7.4 Station point, FOV and cone of vision (Wave 3)
 
-`V` toggles the overlay (persisted as `showCone`). The principal point `P` is the picture-plane
-centre `(0, 0)`. Project VP0 and VP1 onto the horizon direction `normalize(VP1 - VP0)`; their
-signed distances from `P` must have opposite signs, otherwise the overlay draws nothing and the
+`V` toggles the overlay (persisted as `showCone`). The principal point `P` is the foot of the
+perpendicular from the picture-plane centre `(0, 0)` onto the horizon VP0-VP1. Project VP0 and VP1
+onto the horizon direction `normalize(VP1 - VP0)`; their signed distances from `P` must have opposite signs, otherwise the overlay draws nothing and the
 foot's cone readout says it needs points 1 and 2 either side of the centre. With `d = sqrt(|x0| * |x1|)`:
 
-- station point `S = P + (0, d)` in world units (below the principal point);
+- station point `S = P + d * n` in world units, `n` the unit normal to the horizon on the +Y side
+  (below the horizon);
 - field of view `FOV = 2 * atan((W / 2) / d)`, shown rounded to whole degrees;
 - cone of vision = circle about `P` of radius `d * tan(30°)` (`≈ 0.57735 d`);
 - a small screen-space warning tick beside any existing VP whose distance from `P` exceeds the cone
