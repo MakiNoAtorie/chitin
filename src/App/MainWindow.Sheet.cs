@@ -15,7 +15,11 @@ namespace Chitin;
 public partial class MainWindow
 {
     private sealed record TrayTool(string Letter, string Name, string Gesture, string Options, string? Command,
-        ToolKind? Kind);
+        ToolKind? Kind)
+    {
+        // Seven characters at most: the label fits the 40 px tray.
+        public string Label => Name == "Subdivide" ? "DIVIDE" : Name.ToUpperInvariant();
+    }
 
     private static readonly TrayTool[] TrayTools =
     {
@@ -142,24 +146,38 @@ public partial class MainWindow
     {
         foreach (TrayTool tool in TrayTools)
         {
-            var letter = new TextBlock
+            // The name under the letter: a new user recognises a tool instead of recalling its key.
+            var letter = new StackPanel
             {
-                Text = tool.Letter,
-                FontSize = 19,
-                FontWeight = FontWeight.Bold,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = tool.Letter,
+                        FontSize = 17,
+                        FontWeight = FontWeight.Bold,
+                        HorizontalAlignment = HorizontalAlignment.Center
+                    },
+                    new TextBlock
+                    {
+                        Text = tool.Label,
+                        FontSize = 7,
+                        HorizontalAlignment = HorizontalAlignment.Center
+                    }
+                }
             };
             Control cell;
             if (tool.Command is { } name)
             {
-                var button = new Button { Classes = { "cell" }, Content = letter, Height = 39 };
+                var button = new Button { Classes = { "cell" }, Content = letter, Height = 46 };
                 button.Click += (_, _) => RunAsync(() => Viewport.RunCommandAsync(name));
                 cell = button;
             }
             else
             {
-                cell = new Border { Child = letter, Height = 39, Background = Brushes.Transparent };
+                cell = new Border { Child = letter, Height = 46, Background = Brushes.Transparent };
             }
 
             ToolTip.SetTip(cell, $"{tool.Name} ({tool.Gesture})\n{tool.Options}");
@@ -237,7 +255,15 @@ public partial class MainWindow
     private void BuildPoints()
     {
         var header = new DockPanel { Margin = new Thickness(10, 8, 10, 6) };
-        var key = new TextBlock { Classes = { "caps" }, Text = "CTRL K" };
+        var key = new Button
+        {
+            Classes = { "cell" },
+            Padding = new Thickness(4, 1),
+            Content = new TextBlock { Classes = { "caps" }, Text = "HIDE  CTRL K" }
+        };
+        ToolTip.SetTip(key, "Hide the points panel (Ctrl+K, or View › Points panel)");
+        AutomationProperties.SetName(key, "Hide the points panel");
+        key.Click += (_, _) => TogglePoints();
         DockPanel.SetDock(key, Dock.Right);
         header.Children.Add(key);
         header.Children.Add(new TextBlock { Classes = { "caps" }, Text = "POINTS", FontWeight = FontWeight.Bold });
@@ -375,6 +401,10 @@ public partial class MainWindow
             Typed(row.Y, point.Pos.Y, world.PicturePlaneHeightHalf) is { } y)
         {
             Viewport.MovePoint(index, new Vec2(x, y));
+        }
+        else if (world.VanishingPoints[index] != null && row.X.Text != null && row.Y.Text != null)
+        {
+            world.SetStatus($"Point {index + 1}: type a number, such as 120 or -45.5.");
         }
 
         _pointsRevision = -1;
